@@ -1,55 +1,81 @@
 # Changelog
 
-## [1.1.0]
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## [1.2.0] - 2026-04-21
 
 ### Added
-- Collect: Implement adjustable image collection root path
-  - New parameter: `--collectpath`
-- Label: Add possibilty to define the labeled images root folder working with label file
-  - Define `--labeling` and `--labelfile` at the same time using different paths
-- Label: Support label file with prediction data (modern csv file syntax)
-  - Label file with legacy syntax (only index, file path) is still supported
-- Label: Show prediction value parsed from label file
-  - Precondition: Label file with modern syntax + No model selected
-- App: Implement application version handling
-  - Source of version: `collectmeteranalog/__version__.py`
-  - New parameter `--version`
-  - Automatically inject version to all build processes and GUI (window title)
-  - Use version in github actions for artifacts
+- Tests: Add test suite with 86% coverage (pytest + pytest-cov)
+  - Headless GUI testing via `QT_QPA_PLATFORM=offscreen`
+  - Tests for `collect.py`, `hash_manual.py`, `labeling.py`, `predict.py`, `__main__.py`
+- Dependencies: Add `PySide6` as UI framework
 
 ### Changed
-- Collect: Fix image download counter
-- Collect: Fix `keepdownloads` option - do not delete `images_raw` content
-- Collect: Save downloaded JPG images without decode/encode to preserve original quality
-- Collect: Refactor / streamline `readimages` function
-- Label: Refactor functions for model prediction (`load_interpreter`, `predict`)
-- Label: Refactor GUI button alignment / size
-- App: Fix exit(1) - unknown error
-- App: Refactored readme
-- App: Updated github actions
+- Label: Migrate UI framework from matplotlib to PySide6
+  - New class-based architecture (`LabelingWindow`, `PolarOverlayView`)
+  - Polar overlay rendered in viewport coordinates (consistent size regardless of image resolution)
+  - Yellow tick marks and labels with dark background for readability on any image
+  - Dark theme with styled buttons and slider
+  - Replace global variables with instance attributes
+
+### Fixed
+- Label: `LabelingWindow` now converts `files` to a Python list so that
+  removing images works correctly when a numpy array is passed from `label()`
 
 ### Removed
-- Label: Internal model removed -> default: No model is used
-- App: Repo cleanup
+- Dependencies: Remove `matplotlib` and `scipy`
+
+
+## [1.1.0] - 2025-06-05
+
+### Added
+- Collect: Add adjustable image collection root path via `--collectpath`
+- Label: Add support for defining `--labeling` and `--labelfile` with different paths simultaneously
+- Label: Add support for label file with prediction data (modern CSV format)
+  - Legacy format (index + file path only) is still supported
+- Label: Show prediction value from label file when no model is selected
+- App: Add application version handling
+  - Version source: `collectmeteranalog/__version__.py`
+  - New `--version` parameter
+  - Version injected automatically into build processes and GUI window title
+  - Version used in GitHub Actions for build artifacts
+
+### Changed
+- Collect: Refactor and streamline `readimages` function
+- Collect: Save downloaded JPEG images without re-encoding to preserve original quality
+- Label: Refactor model prediction functions (`load_interpreter`, `predict`)
+- Label: Refactor GUI button alignment and sizing
+- App: Update GitHub Actions workflows
+- App: Update README
+
+### Fixed
+- Collect: Fix image download counter
+- Collect: Fix `--keepdownloads` option — no longer deletes `raw_images` content
+- App: Fix `exit(1)` on unknown error
+
+### Removed
+- Label: Remove bundled internal model — no model is used by default
 
 
 ## [1.0.14]
 
-- Fix OS downloads
+### Fixed
+- Collect: Fix OS-specific download issues
 
 
 ## [1.0.8]
 
-- fix failure in labeling with csv-file if multiple images are not available
+### Fixed
+- Label: Fix crash when multiple images referenced in CSV file are not available
 
 
 ## [1.0.1] - 2022-09-18
 
-### Added
-
 ### Changed
-
-- changed release action
-- fixed requirements
-
-### Removed
+- App: Update release action
+- App: Fix requirements
