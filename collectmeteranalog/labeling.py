@@ -498,8 +498,7 @@ def label(path, startlabel=0.0, labelfile_path=None, ticksteps=1):
         files = ziffer_data_files(path)
 
     if len(files) == 0:
-        print("No images found in defined path")
-        sys.exit(1)
+        raise SystemExit("No images found in defined path")
 
     print(f"Startlabel:", startlabel)
 
