@@ -213,7 +213,7 @@ class LabelingWindow(QMainWindow):
 
     def __init__(self, files, startlabel, ticksteps, labelfile_prediction):
         super().__init__()
-        self.files = files
+        self.files = list(files)
         self.ticksteps = ticksteps
         self.labelfile_prediction = labelfile_prediction
         self.i = 0
