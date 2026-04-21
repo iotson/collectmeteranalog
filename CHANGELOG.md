@@ -7,8 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.2.0] - 2026-04-21
-
 ### Added
 - Tests: Add test suite with 86% coverage (pytest + pytest-cov)
   - Headless GUI testing via `QT_QPA_PLATFORM=offscreen`
