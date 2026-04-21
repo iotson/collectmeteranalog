@@ -1,7 +1,6 @@
 pillow
 numpy
-matplotlib
-scipy
+PySide6
 scikit-learn
 imagehash
 urllib3

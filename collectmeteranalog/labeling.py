@@ -1,17 +1,27 @@
-from glob import glob
 import os
 import sys
-from PIL import Image
-import matplotlib
-import numpy as np
-import matplotlib.pyplot as plt 
-import matplotlib.figure as fig
-from matplotlib.widgets import Slider, Button, RadioButtons, TextBox
+import math
 import shutil
+
+import numpy as np
 import pandas as pd
+from PIL import Image
+from PIL.ImageQt import ImageQt
+
+from PySide6.QtWidgets import (
+    QApplication, QMainWindow, QGraphicsView, QGraphicsScene,
+    QGraphicsPixmapItem, QGraphicsLineItem, QGraphicsTextItem,
+    QPushButton, QSlider, QLabel, QVBoxLayout, QHBoxLayout,
+    QGridLayout, QWidget, QSizePolicy
+)
+from PySide6.QtCore import Qt, QLineF, QPointF
+from PySide6.QtGui import (
+    QPixmap, QImage, QPen, QColor, QFont, QKeySequence, QShortcut,
+    QPainter, QBrush
+)
+
 from collectmeteranalog.predict import predict
 from collectmeteranalog.__version__ import __version__
-from numpy import pi
 
 
 def ziffer_data_files(input_dir):
@@ -19,46 +29,437 @@ def ziffer_data_files(input_dir):
     imgfiles = []
     for root, dirs, files in os.walk(input_dir):
         for file in files:
-            if (file.endswith(".jpg")):
+            if file.endswith(".jpg"):
                 imgfiles.append(root + "/" + file)
-    
-    imgfiles = sorted(imgfiles, key=lambda x : os.path.basename(x))
+    imgfiles = sorted(imgfiles, key=lambda x: os.path.basename(x))
     return imgfiles
 
 
-def label(path, startlabel=0.0, labelfile_path=None, ticksteps=1):
-    global filename
-    global i
-    global im
-    global filelabel
-    global ax
-    global ax2
-    global slabel
-    global files
-    global pred_label
-    global plotedValue
-    global usegrid 
-    global ticksteps_s
-    global labelfile_prediction
+def load_image(files, i, startlabel=-1):
+    while i < len(files):
+        base = os.path.basename(files[i])
+        if base[1] == ".":
+            target = base[0:3]
+        else:
+            target = base[0:1]
+        try:
+            category = float(target)
+        except Exception:
+            category = 0
+        if category >= startlabel:
+            filename = files[i]
+            test_image = Image.open(filename)
+            return test_image, category, filename, i
+        i = i + 1
+    raise SystemExit(f"No images found matching startlabel >= {startlabel}")
 
-    ticksteps_s = ticksteps
-    usegrid = True
+
+class PolarOverlayView(QGraphicsView):
+    """QGraphicsView that displays a meter image with a polar dial overlay."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._scene = QGraphicsScene(self)
+        self.setScene(self._scene)
+        self.setRenderHint(QPainter.Antialiasing)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setStyleSheet("background: #2b2b2b; border: none;")
+
+        self._pixmap_item = None
+        self._grid_visible = True
+        self._filelabel = 0.0
+        self._ticksteps = 1
+
+    def set_image(self, pil_image):
+        """Display a PIL image."""
+        self._current_qimage = ImageQt(pil_image.convert("RGBA"))
+        pixmap = QPixmap.fromImage(self._current_qimage)
+        if self._pixmap_item is None:
+            self._pixmap_item = self._scene.addPixmap(pixmap)
+        else:
+            self._pixmap_item.setPixmap(pixmap)
+        self._pixmap_item.setZValue(0)
+        self._scene.setSceneRect(self._pixmap_item.boundingRect())
+        self.fitInView(self._pixmap_item, Qt.KeepAspectRatio)
+
+    def update_overlay(self, filelabel, ticksteps):
+        """Store overlay parameters and trigger repaint."""
+        self._filelabel = filelabel
+        self._ticksteps = ticksteps
+        self.viewport().update()
+
+    def set_grid_visible(self, visible):
+        self._grid_visible = visible
+        self.viewport().update()
+
+    def _get_viewport_center_and_radius(self):
+        """Get the center and radius of the image in viewport coordinates."""
+        if self._pixmap_item is None:
+            return None, None, None
+        img_rect = self._pixmap_item.boundingRect()
+        # Map image corners to viewport
+        top_left = self.mapFromScene(img_rect.topLeft())
+        bottom_right = self.mapFromScene(img_rect.bottomRight())
+        cx = (top_left.x() + bottom_right.x()) / 2.0
+        cy = (top_left.y() + bottom_right.y()) / 2.0
+        w = bottom_right.x() - top_left.x()
+        h = bottom_right.y() - top_left.y()
+        radius = min(w, h) / 2.0 * 0.95
+        return cx, cy, radius
+
+    def drawForeground(self, painter, rect):
+        """Draw polar overlay in viewport coordinates (independent of image size)."""
+        super().drawForeground(painter, rect)
+        if self._pixmap_item is None:
+            return
+
+        # Reset transform to draw in viewport (pixel) coordinates
+        painter.resetTransform()
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        cx, cy, radius = self._get_viewport_center_and_radius()
+        if radius is None or radius < 5:
+            return
+
+        tick_len = radius * 0.03
+        major_tick_len = radius * 0.055
+
+        # Pointer line
+        angle_rad = 2 * math.pi * self._filelabel / 10.0
+        px = cx + radius * math.sin(angle_rad)
+        py = cy - radius * math.cos(angle_rad)
+        painter.setPen(QPen(QColor(0, 200, 0), max(2, radius * 0.015)))
+        painter.drawLine(QPointF(cx, cy), QPointF(px, py))
+
+        if not self._grid_visible:
+            return
+
+        # Ticks and labels
+        num_ticks = int(100 / self._ticksteps)
+        minor_pen = QPen(QColor(255, 255, 0, 180), max(1, radius * 0.004))
+        major_pen = QPen(QColor(255, 255, 0, 220), max(1.5, radius * 0.007))
+
+        font_size = max(10, int(radius * 0.05))
+        font = QFont("sans-serif", font_size)
+        font.setBold(True)
+        painter.setFont(font)
+        fm = painter.fontMetrics()
+
+        for k in range(num_ticks):
+            val = k * self._ticksteps / 10.0
+            a = 2 * math.pi * val / 10.0
+            sin_a = math.sin(a)
+            cos_a = math.cos(a)
+            is_major = abs(val - round(val)) < 0.01
+
+            # Tick mark
+            tl = major_tick_len if is_major else tick_len
+            painter.setPen(major_pen if is_major else minor_pen)
+            x1 = cx + (radius - tl) * sin_a
+            y1 = cy - (radius - tl) * cos_a
+            x2 = cx + radius * sin_a
+            y2 = cy - radius * cos_a
+            painter.drawLine(QPointF(x1, y1), QPointF(x2, y2))
+
+            # Text labels only at major ticks (0, 1, ..., 9)
+            if is_major:
+                label_text = f"{int(val)}"
+                label_dist = radius + major_tick_len + 4
+                lx = cx + label_dist * sin_a
+                ly = cy - label_dist * cos_a
+                tw = fm.horizontalAdvance(label_text)
+                th = fm.height()
+
+                # Dark background
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(QBrush(QColor(0, 0, 0, 160)))
+                painter.drawRoundedRect(
+                    int(lx - tw / 2 - 2), int(ly - th / 2 - 1),
+                    tw + 4, th + 2, 3, 3
+                )
+
+                # Yellow text
+                painter.setPen(QColor(255, 255, 0))
+                painter.setBrush(Qt.NoBrush)
+                painter.drawText(
+                    int(lx - tw / 2), int(ly - th / 2 + fm.ascent()),
+                    label_text
+                )
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self._pixmap_item is not None:
+            self.fitInView(self._pixmap_item, Qt.KeepAspectRatio)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            cx, cy, radius = self._get_viewport_center_and_radius()
+            if cx is not None:
+                dx = event.pos().x() - cx
+                dy = -(event.pos().y() - cy)
+                angle = math.atan2(dx, dy)
+                if angle < 0:
+                    angle += 2 * math.pi
+                val = round(angle * 10 / (2 * math.pi), 1) % 10
+                window = self.window()
+                if isinstance(window, LabelingWindow):
+                    window.set_filelabel(val)
+        super().mousePressEvent(event)
+
+
+class LabelingWindow(QMainWindow):
+    """Main labeling window replacing the old matplotlib-based UI."""
+
+    def __init__(self, files, startlabel, ticksteps, labelfile_prediction):
+        super().__init__()
+        self.files = list(files)
+        self.ticksteps = ticksteps
+        self.labelfile_prediction = labelfile_prediction
+        self.i = 0
+        self.filelabel = 0.0
+        self.filename = ""
+        self.usegrid = True
+
+        self._setup_ui()
+        self._setup_shortcuts()
+
+        # Load first image
+        img, self.filelabel, self.filename, self.i = load_image(
+            self.files, self.i, startlabel
+        )
+        self._show_image(img)
+        self._update_title()
+
+    def _setup_ui(self):
+        self.setWindowTitle(f"collectmeteranalog v{__version__}")
+        self.setStyleSheet("background: #353535; color: #e0e0e0;")
+
+        central = QWidget()
+        self.setCentralWidget(central)
+        main_layout = QHBoxLayout(central)
+
+        # Graphics view (center)
+        self.view = PolarOverlayView()
+        self.view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        main_layout.addWidget(self.view, stretch=1)
+
+        # Right panel
+        right_panel = QVBoxLayout()
+        right_panel.setSpacing(8)
+
+        # Prediction label
+        self.pred_label = QLabel("Prediction\ndisabled")
+        self.pred_label.setAlignment(Qt.AlignCenter)
+        self.pred_label.setStyleSheet(
+            "background: #f8f8f8; color: #333; padding: 8px; "
+            "border-radius: 4px; font-size: 13px;"
+        )
+        right_panel.addWidget(self.pred_label)
+
+        right_panel.addStretch()
+
+        # Grid toggle
+        btn_grid = QPushButton("Grid")
+        btn_grid.clicked.connect(self._on_toggle_grid)
+        right_panel.addWidget(btn_grid)
+
+        right_panel.addStretch()
+
+        # +/- buttons
+        btn_layout = QGridLayout()
+        btn_dec1 = QPushButton("-1.0")
+        btn_dec01 = QPushButton("-0.1")
+        btn_inc01 = QPushButton("+0.1")
+        btn_inc1 = QPushButton("+1.0")
+        btn_dec1.clicked.connect(lambda: self._change_label(-1.0))
+        btn_dec01.clicked.connect(lambda: self._change_label(-0.1))
+        btn_inc01.clicked.connect(lambda: self._change_label(0.1))
+        btn_inc1.clicked.connect(lambda: self._change_label(1.0))
+        btn_layout.addWidget(btn_dec1, 0, 0)
+        btn_layout.addWidget(btn_inc1, 0, 1)
+        btn_layout.addWidget(btn_dec01, 1, 0)
+        btn_layout.addWidget(btn_inc01, 1, 1)
+        right_panel.addLayout(btn_layout)
+
+        right_panel.addStretch()
+
+        # Previous / Update / Delete
+        btn_previous = QPushButton("Previous")
+        btn_update = QPushButton("Update")
+        btn_delete = QPushButton("Delete")
+        btn_delete.setStyleSheet(
+            "QPushButton { background: #c0392b; color: white; padding: 6px; }"
+            "QPushButton:hover { background: #e74c3c; }"
+        )
+        btn_previous.clicked.connect(self._on_previous)
+        btn_update.clicked.connect(self._on_next)
+        btn_delete.clicked.connect(self._on_remove)
+        right_panel.addWidget(btn_previous)
+        right_panel.addWidget(btn_update)
+        right_panel.addWidget(btn_delete)
+
+        main_layout.addLayout(right_panel)
+
+        # Slider (bottom)
+        slider_layout = QHBoxLayout()
+        self.slider_value_label = QLabel("0.0")
+        self.slider_value_label.setMinimumWidth(35)
+        self.slider_value_label.setAlignment(Qt.AlignCenter)
+        self.slider_value_label.setStyleSheet("font-size: 14px; font-weight: bold;")
+
+        self.slider = QSlider(Qt.Horizontal)
+        self.slider.setRange(0, 99)
+        self.slider.setSingleStep(1)
+        self.slider.setPageStep(10)
+        self.slider.setValue(0)
+        self.slider.valueChanged.connect(self._on_slider_changed)
+
+        slider_label = QLabel("Label:")
+        slider_label.setStyleSheet("font-size: 12px;")
+        slider_layout.addWidget(slider_label)
+        slider_layout.addWidget(self.slider, stretch=1)
+        slider_layout.addWidget(self.slider_value_label)
+
+        # Wrap main_layout and slider in a vertical layout
+        outer = QVBoxLayout()
+        content_widget = QWidget()
+        content_widget.setLayout(main_layout)
+        outer.addWidget(content_widget, stretch=1)
+        outer.addLayout(slider_layout)
+
+        wrapper = QWidget()
+        wrapper.setLayout(outer)
+        self.setCentralWidget(wrapper)
+
+        # Style buttons
+        for btn in [btn_grid, btn_dec1, btn_dec01, btn_inc01, btn_inc1,
+                    btn_previous, btn_update]:
+            btn.setStyleSheet(
+                "QPushButton { background: #555; color: white; padding: 6px; "
+                "border-radius: 3px; }"
+                "QPushButton:hover { background: #777; }"
+            )
+
+    def _setup_shortcuts(self):
+        QShortcut(QKeySequence(Qt.Key_Right), self, self._on_next)
+        QShortcut(QKeySequence(Qt.Key_Left), self, self._on_previous)
+        QShortcut(QKeySequence(Qt.Key_Up), self, lambda: self._change_label(0.1))
+        QShortcut(QKeySequence(Qt.Key_Down), self, lambda: self._change_label(-0.1))
+        QShortcut(QKeySequence(Qt.Key_PageUp), self, lambda: self._change_label(1.0))
+        QShortcut(QKeySequence(Qt.Key_PageDown), self, lambda: self._change_label(-1.0))
+        QShortcut(QKeySequence(Qt.Key_Return), self, self._on_next)
+        QShortcut(QKeySequence(Qt.Key_Enter), self, self._on_next)
+        QShortcut(QKeySequence(Qt.Key_Delete), self, self._on_remove)
+
+    def _show_image(self, img):
+        """Display image and overlay."""
+        self._current_pil_image = img  # prevent garbage collection
+        self.view.set_image(img)
+        self._update_overlay()
+        self._update_slider()
+        self._update_prediction(img)
+
+    def _update_overlay(self):
+        self.view.update_overlay(self.filelabel, self.ticksteps)
+
+    def _update_slider(self):
+        self.slider.blockSignals(True)
+        self.slider.setValue(int(round(self.filelabel * 10)))
+        self.slider.blockSignals(False)
+        self.slider_value_label.setText(f"{self.filelabel:.1f}")
+
+    def _update_title(self):
+        self.setWindowTitle(
+            f"collectmeteranalog v{__version__}   |   "
+            f"Image: {self.i + 1} / {len(self.files)}"
+        )
+
+    def _update_prediction(self, img):
+        prediction = predict(img)
+        if (prediction == -1 and self.labelfile_prediction is not None
+                and isinstance(self.labelfile_prediction, (list, np.ndarray))
+                and self.i < len(self.labelfile_prediction)
+                and self.labelfile_prediction[self.i] is not None
+                and not pd.isna(self.labelfile_prediction[self.i])):
+            prediction = self.labelfile_prediction[self.i]
+        if prediction != -1:
+            self.pred_label.setText(f"Prediction:\n{prediction:.1f}")
+        else:
+            self.pred_label.setText("Prediction\ndisabled")
+
+    def set_filelabel(self, val):
+        """Set filelabel from external source (e.g. mouse click)."""
+        self.filelabel = val
+        self._update_slider()
+        self._update_overlay()
+
+    def _change_label(self, delta):
+        self.filelabel = round((self.filelabel + delta) % 10, 1)
+        self._update_slider()
+        self._update_overlay()
+
+    def _on_slider_changed(self, value):
+        self.filelabel = round(value / 10.0, 1)
+        self.slider_value_label.setText(f"{self.filelabel:.1f}")
+        self._update_overlay()
+
+    def _on_previous(self):
+        self.i = (self.i - 1) % len(self.files)
+        self._load_current()
+
+    def _on_next(self):
+        # Save current label by renaming file
+        basename = os.path.basename(self.filename).split('_', 1)
+        basename = basename[-1]
+        new_path = os.path.join(
+            os.path.dirname(self.filename),
+            f"{self.filelabel:.1f}_{basename}"
+        )
+        if self.filename != new_path:
+            self.files[self.i] = new_path
+            shutil.move(self.filename, new_path)
+        self.i = (self.i + 1) % len(self.files)
+        self._load_current()
+
+    def _on_remove(self):
+        os.remove(self.filename)
+        self.files.pop(self.i)
+        if len(self.files) == 0:
+            print("No more images.")
+            self.close()
+            return
+        self.i = self.i % len(self.files)
+        self._load_current()
+
+    def _on_toggle_grid(self):
+        self.usegrid = not self.usegrid
+        self.view.set_grid_visible(self.usegrid)
+        self._update_overlay()
+
+    def _load_current(self):
+        img, self.filelabel, self.filename, self.i = load_image(
+            self.files, self.i
+        )
+        self._show_image(img)
+        self._update_title()
+
+
+def label(path, startlabel=0.0, labelfile_path=None, ticksteps=1):
     labelfile_prediction = None
 
     if labelfile_path is not None:
         try:
             print(f"Loading image file list | labelfile: {labelfile_path}")
-
-            # Load CSV file (only required columns)
-            files_df = pd.read_csv(labelfile_path, index_col="Index", usecols=["Index", "File", "Predicted"])
-
-            # Add path to file name
-            files_df["FilePath"] = files_df["File"].apply(lambda f: os.path.join(path, f))
-
-            # Keep only entries where file exists
+            files_df = pd.read_csv(
+                labelfile_path, index_col="Index",
+                usecols=["Index", "File", "Predicted"]
+            )
+            files_df["FilePath"] = files_df["File"].apply(
+                lambda f: os.path.join(path, f)
+            )
             files_df = files_df[files_df["FilePath"].apply(os.path.exists)]
 
-            # Load prediction from labelfile if column is available
             if "Predicted" in files_df.columns:
                 labelfile_prediction = files_df["Predicted"].to_numpy().reshape(-1)
                 print("labelfile: Prediction data available")
@@ -66,330 +467,45 @@ def label(path, startlabel=0.0, labelfile_path=None, ticksteps=1):
                 labelfile_prediction = []
                 print("labelfile: No prediction data available")
 
-            files = files_df["FilePath"].to_numpy()
+            files = files_df["FilePath"].tolist()
 
             if len(files) > 0:
                 print(f"Loading images from path: {os.path.dirname(files[0])}")
             else:
                 raise SystemExit("Image file list empty. No files to load")
 
-        except Exception as e:
-            print(f"Columns 'Index, File, Predicted' in labelfile not found. Try loading labelfile in legacy format...")
-
+        except Exception:
+            print("Columns 'Index, File, Predicted' in labelfile not found. "
+                  "Try loading labelfile in legacy format...")
             try:
-                raw_files = pd.read_csv(labelfile_path, index_col=0).to_numpy().reshape(-1)
-
-                print(f"Loading images from path: {os.path.join(path, os.path.dirname(raw_files[0]))}")
-                files = np.array([os.path.join(path, f) for f in raw_files if os.path.exists(os.path.join(path, f))])
-
+                raw_files = pd.read_csv(
+                    labelfile_path, index_col=0
+                ).to_numpy().reshape(-1)
+                print(f"Loading images from path: "
+                      f"{os.path.join(path, os.path.dirname(raw_files[0]))}")
+                files = [
+                    os.path.join(path, f) for f in raw_files
+                    if os.path.exists(os.path.join(path, f))
+                ]
                 labelfile_prediction = [None] * len(files)
-            
             except Exception as legacy_e:
                 print(f"Legacy loading failed: {legacy_e}")
-                raise SystemExit("Failed to load labelfile in any supported format.")
+                raise SystemExit(
+                    "Failed to load labelfile in any supported format."
+                )
     else:
         print(f"Loading images from path: {path}")
         files = ziffer_data_files(path)
 
-
-    if (len(files)==0):
-        print("No images found in defined path")
-        sys.exit(1)
-
+    if len(files) == 0:
+        raise SystemExit("No images found in defined path")
 
     print(f"Startlabel:", startlabel)
-    i = 0
-    img, filelabel, filename, i = load_image(files, i, startlabel)
 
-    # disable toolbar
-    matplotlib.rcParams['toolbar'] = 'None'
- 
-    # set window title
-    fig = plt.gcf()
-    
-    fig.canvas.manager.set_window_title(f"collectmeteranalog v{__version__}   |   Image: 1 / {str(len(files))}")
-    ax0 = fig.add_subplot(111)
-    ax0.axis("off")
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication(sys.argv)
 
-    #plt.polar()
-    #plt.yticks(np.arange(0, 1, step=0.1))
-    
-    im = ax0.imshow(img, extent=[0, 1, 0, 1])
-    
-    ax2 = fig.add_subplot(111, polar=True, label="polar")
-    ax2.set_facecolor("None")
-    # suppress the radial labels
-    plt.setp(ax2.get_yticklabels(), visible=False)
-   
-    # set the circumference labels
-    ax2.set_xticks(np.linspace(0, 2*pi, int(100/ticksteps), endpoint=False))
-    ax2.set_xticklabels(np.arange(0, 10, step=float(ticksteps)/10.0).round(2),fontsize=7)
-    # Rotating the labels would be nice, but seems not to be trivial, see https://stackoverflow.com/questions/46719340/how-to-rotate-tick-labels-in-polar-matplotlib-plot
-    
-    #ax2.grid(False)
-    #ax2.grid(linewidth=2, drawstyle='steps-post')
-    # make the labels go clockwise
-    ax2.set_theta_direction(-1)
-    # place 0 at the top
-    ax2.set_theta_offset(pi/2.0)    
-    ax2.set_yticklabels([])
-    #ax2.spines['polar'].set_visible(False)
-    #plt.text(1.1, 0.9, "You can use cursor key controll also:\n\nleft/right = prev/next\nup/down=in/decrease value\ndelete=remove.", fontsize=6)
-    ax=plt.gca()
-
-    axlabel =  plt.axes([0.22, 0.025, 0.58, 0.03])
-    slabel = Slider(axlabel, label='Label',valmin= 0.0, valmax=9.9, valstep=0.1, 
-                    valinit=filelabel,
-                    orientation='horizontal')
-    
-    # Show prediction value in plot
-    pred_label = fig.text(-0.22, 0.5, 'Prediction\ndisabled', transform=ax0.transAxes, ha='center', va='center', 
-                          backgroundcolor='lightgray', bbox=dict(facecolor='#f8f8f8', edgecolor='none'))
-
-    prediction = predict(img)
-    if (prediction == -1 and labelfile_prediction is not None and isinstance(labelfile_prediction, (list, np.ndarray))
-        and i < len(labelfile_prediction) and labelfile_prediction[i] is not None and not pd.isna(labelfile_prediction[i])):
-        prediction = labelfile_prediction[i]
-    
-    if (prediction != -1):
-        pred_label.set_text("Prediction:\n{:.1f}".format(prediction))
-    
-    # Show value in plot
-    plotedValue, = ax2.plot([0, 2*pi * filelabel / 10], [0, 2], 'g', linewidth=5)    
-    
-    previousax = plt.axes([0.87, 0.225, 0.115, 0.05])
-    bprevious = Button(previousax, 'Previous', hovercolor='0.975')
-    nextax = plt.axes([0.87, 0.025, 0.115, 0.05])
-    bnext = Button(nextax, 'Update', hovercolor='0.975')
-    removeax = plt.axes([0.87, 0.4, 0.115, 0.05])
-    bremove = Button(removeax, 'Delete', hovercolor='0.975')
-    
-    increase0_1_label = plt.axes([0.93, 0.095, 0.055, 0.05])
-    bincrease0_1_label = Button(increase0_1_label, '+0.1', hovercolor='0.975')
-    increase1_label = plt.axes([0.93, 0.155, 0.055, 0.05])
-    bincrease1_label = Button(increase1_label, '+1.0', hovercolor='0.975')
-    
-    decrease0_1_label = plt.axes([0.87, 0.095, 0.055, 0.05])
-    bdecrease0_1_label = Button(decrease0_1_label, '-0.1', hovercolor='0.975')
-    decrease1_label = plt.axes([0.87, 0.155, 0.055, 0.05])
-    bdecrease1_label = Button(decrease1_label, '-1.0', hovercolor='0.975')
-
-    toggle_grid_label = plt.axes([0.87, 0.95, 0.115, 0.05])
-    toggle_grid_btn = Button(toggle_grid_label, 'Grid', hovercolor='0.975')
-
-
-    def update_window():
-        global i
-        global im
-        global filelabel
-        global filename
-        global pred_label
-        global labelfile_prediction
-
-        img, filelabel, filename, i = load_image(files, i)
-        im.set_data(img)
-        plotedValue.set_xdata([0, 2*pi * filelabel / 10])        
-        slabel.set_val(filelabel)
-        fig = plt.gcf()
-        fig.canvas.manager.set_window_title(f"collectmeteranalog v{__version__}   |   Image: {str(i+1)} / {str(len(files))}")
-        
-        prediction = predict(img)
-        if (prediction == -1 and labelfile_prediction is not None and isinstance(labelfile_prediction, (list, np.ndarray))
-            and i < len(labelfile_prediction) and labelfile_prediction[i] is not None and not pd.isna(labelfile_prediction[i])):
-            prediction = labelfile_prediction[i]
-        
-        if (prediction != -1):
-            pred_label.set_text("Prediction:\n{:.1f}".format(prediction))
-    
-    
-    def load_previous():
-        global i
-
-        i = (i - 1) % len(files)
-
-        update_window()
-
-
-    def load_next(increaseindex = True):
-        global i
-
-        if increaseindex:
-            i = (i + 1) % len(files)
-        
-        update_window()
-        
-
-    def updatePlot():   
-        plotedValue.set_xdata([0, 2*pi * filelabel / 10])  
-        plt.pause(0.1)
-        #fig.canvas.draw()
-        #fig.canvas.flush_events()
-
-
-    def increase0_1_label(event):
-        global filelabel
-        
-        filelabel = (filelabel + 0.1) % 10
-        slabel.set_val(filelabel)
-        updatePlot()
-        
-
-    def increase1_label(event):
-        global filelabel
-        filelabel = (filelabel + 1) % 10
-        slabel.set_val(filelabel)
-        updatePlot()
-
-
-    def decrease0_1_label(event):
-        global filelabel
-
-        filelabel = (filelabel - 0.1) % 10
-        slabel.set_val(filelabel)
-        updatePlot()
-
-
-    def decrease1_label(event):
-        global filelabel
-
-        filelabel = (filelabel - 1) % 10
-        slabel.set_val(filelabel)
-        updatePlot()
-
-
-    def remove(event):
-        global filename
-        global files
-        global i
-        os.remove(filename)
-        files = np.delete(files,i, 0)
-        load_next(False)
-
-
-    def previous(event):
-        load_previous()
-
-
-    def l_next(event):
-        global filelabel
-        global filename
-        
-        basename = os.path.basename(filename).split('_', 1)
-        basename = basename[-1]
-        _zw = os.path.join(os.path.dirname(filename), "{:.1f}".format(filelabel) + "_" + basename)
-        if (filename != _zw):
-            files[i] = _zw
-            shutil.move(filename, _zw)
-        load_next()
-
-
-    def on_press(event):
-        #print('press', event.key)
-        if event.key == 'right':
-            l_next(event)
-        if event.key == 'left':
-            previous(event)
-        if event.key == 'up':
-            increase0_1_label(event);
-        if event.key == 'pageup':
-            increase1_label(event);
-        if event.key == 'down':
-            decrease0_1_label(event)
-        if event.key == 'pagedown':
-            decrease1_label(event)
-        if event.key == 'enter':
-            l_next(event)
-        if event.key == 'delete':
-            remove(event)
-
-
-    def on_click(event):  
-        global slabel      
-        global filelabel
-        global ax2
-        if event.inaxes != ax2:
-            return
-
-        #print(event.xdata, (round(event.xdata*10 / (2*pi), 1)+ 10) %10, event.xdata+2*pi-pi/2, slabel.val)
-        filelabel = (round(event.xdata*10 / (2*pi), 1)+ 10) %10
-        
-        slabel.set_val(filelabel) # event.xdata is directly in rad
-        updatePlot()
-        #print(event.xdata, slabel.val)
-
-
-    def on_toggle_grid(event):  
-        global ax2
-        global usegrid
-        usegrid = not usegrid
-        ax2.grid(usegrid)
-
-        if (usegrid):
-            ax2.set_xticks(np.linspace(0, 2*pi, int(100/ticksteps_s), endpoint=False))
-            ax2.set_xticklabels(np.arange(0, 10, step=float(ticksteps_s)/10.0).round(2),fontsize=7)
-        else:
-            ax2.set_xticks([])
-            ax2.set_xticklabels([])
-        plt.draw()
-        #plt.pause(0.0001)
-        #plt.clf()
-    
-
-
-    fig.canvas.mpl_connect('key_press_event', on_press)
-    
-    
-    bnext.on_clicked(l_next)
-    bprevious.on_clicked(previous)
-    bremove.on_clicked(remove)
-    bincrease0_1_label.on_clicked(increase0_1_label)
-    bincrease1_label.on_clicked(increase1_label)
-    bdecrease0_1_label.on_clicked(decrease0_1_label)
-    bdecrease1_label.on_clicked(decrease1_label)
-    toggle_grid_btn.on_clicked(on_toggle_grid)
-    #plt.tight_layout()
-    
-    fig.canvas.mpl_connect('button_press_event', on_click)
-    #plt.connect('button_press_event', on_click)
-
-    # Maximize window
-    # See https://stackoverflow.com/questions/12439588/how-to-maximize-a-plt-show-window-using-python
-    def maximize():
-        backend = str(plt.get_backend())
-        mgr = plt.get_current_fig_manager()
-        if backend == 'TkAgg':
-            if os.name == 'nt':
-                mgr.window.state('zoomed')
-            else:
-                mgr.resize(*mgr.window.maxsize())
-        elif backend == 'wxAgg':
-            mgr.frame.Maximize(True)
-        elif backend == 'Qt4Agg':
-            mgr.window.showMaximized()
-            
-    maximize()
-    plt.show()
-
-
-def load_image(files, i, startlabel = -1):
-
-    while True:
-        base = os.path.basename(files[i])
-        # get label from filename (1.2_ new or 1_ old),
-        if (base[1]=="."):
-            target = base[0:3]
-        else:
-            target = base[0:1]
-        
-        try:
-            category = float(target)
-        except:
-            category = 0
-        if category >= startlabel:  
-            break 
-        else:
-            i = (i + 1)
-
-    filename = files[i]
-    test_image = Image.open(filename)
-    return test_image, category, filename, i
+    window = LabelingWindow(files, startlabel, ticksteps, labelfile_prediction)
+    window.showMaximized()
+    app.exec()
