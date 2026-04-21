@@ -424,7 +424,7 @@ class LabelingWindow(QMainWindow):
 
     def _on_remove(self):
         os.remove(self.filename)
-        self.files = np.delete(self.files, self.i, 0)
+        self.files.pop(self.i)
         if len(self.files) == 0:
             print("No more images.")
             self.close()
