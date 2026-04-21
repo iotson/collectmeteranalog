@@ -11,3 +11,6 @@ collectmeteranalog/__pycache__
 dist/
 collectmeteranalog.egg-info/
 .venv
+.coverage
+htmlcov/
+.pytest_cache/
