@@ -36,7 +36,7 @@ def ziffer_data_files(input_dir):
 
 
 def load_image(files, i, startlabel=-1):
-    while True:
+    while i < len(files):
         base = os.path.basename(files[i])
         if base[1] == ".":
             target = base[0:3]
@@ -47,12 +47,11 @@ def load_image(files, i, startlabel=-1):
         except Exception:
             category = 0
         if category >= startlabel:
-            break
-        else:
-            i = i + 1
-    filename = files[i]
-    test_image = Image.open(filename)
-    return test_image, category, filename, i
+            filename = files[i]
+            test_image = Image.open(filename)
+            return test_image, category, filename, i
+        i = i + 1
+    raise SystemExit(f"No images found matching startlabel >= {startlabel}")
 
 
 class PolarOverlayView(QGraphicsView):
