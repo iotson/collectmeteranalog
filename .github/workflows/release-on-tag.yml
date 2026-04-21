@@ -1,0 +1,143 @@
+name: Release on Tag
+
+# Triggered by pushing a version tag, e.g.: git tag v1.3.0 && git push origin v1.3.0
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write   # needed to push the version-bump commit and create the release
+
+jobs:
+  release:
+    name: Bump version, update changelog, release, publish
+    runs-on: ubuntu-latest
+
+    steps:
+      # -----------------------------------------------------------------------
+      # 1. Checkout – full history so we can push the bump commit back
+      # -----------------------------------------------------------------------
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # Use a PAT if main is branch-protected; GITHUB_TOKEN is enough otherwise
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # -----------------------------------------------------------------------
+      # 2. Derive version from tag (strips the leading "v")
+      # -----------------------------------------------------------------------
+      - name: Extract version
+        id: version
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"      # e.g. v1.3.0
+          VERSION="${TAG#v}"                   # e.g. 1.3.0
+          echo "TAG=$TAG"         >> $GITHUB_OUTPUT
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      # -----------------------------------------------------------------------
+      # 3. Update __version__.py
+      # -----------------------------------------------------------------------
+      - name: Update __version__.py
+        run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+          python - << EOF
+          import re, pathlib
+          p = pathlib.Path("collectmeteranalog/__version__.py")
+          content = re.sub(
+              r'__version__\s*=\s*["\'][^"\']*["\']',
+              f'__version__ = "{VERSION}"',
+              p.read_text()
+          )
+          p.write_text(content)
+          print(f"Set __version__ = {VERSION!r}")
+          EOF
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+
+      # -----------------------------------------------------------------------
+      # 4. Update CHANGELOG.md  →  [Unreleased] becomes [VERSION] - DATE
+      #    A fresh empty [Unreleased] section is kept at the top.
+      # -----------------------------------------------------------------------
+      - name: Update CHANGELOG.md
+        run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+          python - << EOF
+          import pathlib, datetime, re
+          today = datetime.date.today().isoformat()
+          p = pathlib.Path("CHANGELOG.md")
+          content = p.read_text()
+          # Replace the first [Unreleased] heading with [Unreleased] + new version heading
+          content = content.replace(
+              "## [Unreleased]",
+              f"## [Unreleased]\n\n## [{VERSION}] - {today}",
+              1
+          )
+          p.write_text(content)
+          print(f"Promoted [Unreleased] to [{VERSION}] - {today}")
+          EOF
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+
+      # -----------------------------------------------------------------------
+      # 5. Extract the release notes for this version (used as GitHub Release body)
+      # -----------------------------------------------------------------------
+      - name: Extract release notes
+        id: notes
+        run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+          python - << EOF
+          import pathlib, re
+          version = "$VERSION"
+          content = pathlib.Path("CHANGELOG.md").read_text()
+          # Grab everything between the new version header and the next ## header
+          pattern = rf"## \[{re.escape(version)}\][^\n]*\n(.*?)(?=\n## |\Z)"
+          match = re.search(pattern, content, re.DOTALL)
+          notes = match.group(1).strip() if match else "No release notes."
+          pathlib.Path("release_notes.md").write_text(notes)
+          print(notes)
+          EOF
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+
+      # -----------------------------------------------------------------------
+      # 6. Commit version bump back to main
+      # -----------------------------------------------------------------------
+      - name: Commit and push version bump
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add collectmeteranalog/__version__.py CHANGELOG.md
+          git commit -m "chore: release ${{ steps.version.outputs.TAG }}"
+          git push origin HEAD:main
+
+      # -----------------------------------------------------------------------
+      # 7. Create GitHub Release
+      # -----------------------------------------------------------------------
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.TAG }}
+          name: ${{ steps.version.outputs.TAG }}
+          body_path: release_notes.md
+          draft: false
+          prerelease: false
+
+      # -----------------------------------------------------------------------
+      # 8. Build and publish to PyPI
+      # -----------------------------------------------------------------------
+      - name: Install build tools
+        run: python -m pip install --upgrade pip build
+
+      - name: Build package
+        run: python -m build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@v1.12.4
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
