@@ -9,9 +9,7 @@
 name: Publish To PyPI
 
 on:
-  workflow_dispatch:
-  release:
-    types: [created]
+  workflow_dispatch:   # manual fallback only – publishing is handled by release-on-tag.yml
 
 permissions:
   contents: read
