@@ -42,68 +42,65 @@ jobs:
 
       # -----------------------------------------------------------------------
       # 3. Update __version__.py
+      #    os.environ["VERSION"] is used so the shell variable is visible to Python.
       # -----------------------------------------------------------------------
       - name: Update __version__.py
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
         run: |
-          VERSION=${{ steps.version.outputs.VERSION }}
-          python - << EOF
-          import re, pathlib
+          python - << 'EOF'
+          import re, pathlib, os
+          version = os.environ["VERSION"]
           p = pathlib.Path("collectmeteranalog/__version__.py")
           content = re.sub(
               r'__version__\s*=\s*["\'][^"\']*["\']',
-              f'__version__ = "{VERSION}"',
+              f'__version__ = "{version}"',
               p.read_text()
           )
           p.write_text(content)
-          print(f"Set __version__ = {VERSION!r}")
+          print(f"Set __version__ = {version!r}")
           EOF
-        env:
-          VERSION: ${{ steps.version.outputs.VERSION }}
 
       # -----------------------------------------------------------------------
       # 4. Update CHANGELOG.md  →  [Unreleased] becomes [VERSION] - DATE
       #    A fresh empty [Unreleased] section is kept at the top.
       # -----------------------------------------------------------------------
       - name: Update CHANGELOG.md
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
         run: |
-          VERSION=${{ steps.version.outputs.VERSION }}
-          python - << EOF
-          import pathlib, datetime, re
+          python - << 'EOF'
+          import pathlib, datetime, os
+          version = os.environ["VERSION"]
           today = datetime.date.today().isoformat()
           p = pathlib.Path("CHANGELOG.md")
           content = p.read_text()
-          # Replace the first [Unreleased] heading with [Unreleased] + new version heading
           content = content.replace(
               "## [Unreleased]",
-              f"## [Unreleased]\n\n## [{VERSION}] - {today}",
+              f"## [Unreleased]\n\n## [{version}] - {today}",
               1
           )
           p.write_text(content)
-          print(f"Promoted [Unreleased] to [{VERSION}] - {today}")
+          print(f"Promoted [Unreleased] to [{version}] - {today}")
           EOF
-        env:
-          VERSION: ${{ steps.version.outputs.VERSION }}
 
       # -----------------------------------------------------------------------
       # 5. Extract the release notes for this version (used as GitHub Release body)
       # -----------------------------------------------------------------------
       - name: Extract release notes
-        id: notes
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
         run: |
-          VERSION=${{ steps.version.outputs.VERSION }}
-          python - << EOF
-          import pathlib, re
-          version = "$VERSION"
+          python - << 'EOF'
+          import pathlib, re, os
+          version = os.environ["VERSION"]
           content = pathlib.Path("CHANGELOG.md").read_text()
-          # Grab everything between the new version header and the next ## header
           pattern = rf"## \[{re.escape(version)}\][^\n]*\n(.*?)(?=\n## |\Z)"
           match = re.search(pattern, content, re.DOTALL)
           notes = match.group(1).strip() if match else "No release notes."
           pathlib.Path("release_notes.md").write_text(notes)
           print(notes)
           EOF
-        env:
-          VERSION: ${{ steps.version.outputs.VERSION }}
 
       # -----------------------------------------------------------------------
       # 6. Commit version bump back to main
