@@ -467,7 +467,7 @@ def label(path, startlabel=0.0, labelfile_path=None, ticksteps=1):
                 labelfile_prediction = []
                 print("labelfile: No prediction data available")
 
-            files = files_df["FilePath"].to_numpy()
+            files = files_df["FilePath"].tolist()
 
             if len(files) > 0:
                 print(f"Loading images from path: {os.path.dirname(files[0])}")
@@ -483,10 +483,10 @@ def label(path, startlabel=0.0, labelfile_path=None, ticksteps=1):
                 ).to_numpy().reshape(-1)
                 print(f"Loading images from path: "
                       f"{os.path.join(path, os.path.dirname(raw_files[0]))}")
-                files = np.array([
+                files = [
                     os.path.join(path, f) for f in raw_files
                     if os.path.exists(os.path.join(path, f))
-                ])
+                ]
                 labelfile_prediction = [None] * len(files)
             except Exception as legacy_e:
                 print(f"Legacy loading failed: {legacy_e}")
