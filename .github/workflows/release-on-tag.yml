@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: write   # needed to push the version-bump commit and create the release
+  id-token: write   # needed for PyPI Trusted Publishing (OIDC)
 
 jobs:
   release:
@@ -136,5 +137,3 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@v1.12.4
-        with:
-          password: ${{ secrets.PYPI_API_TOKEN }}
