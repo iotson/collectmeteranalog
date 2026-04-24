@@ -63,6 +63,44 @@ jobs:
           name: coverage-report
           path: coverage.xml
 
+      - name: Coverage summary
+        if: always()
+        run: |
+          python - << 'EOF'
+          import os, pathlib
+          import xml.etree.ElementTree as ET
+
+          report = pathlib.Path("coverage.xml")
+          if not report.exists():
+              out = "### Coverage\n\n> Report not available.\n"
+          else:
+              root = ET.parse(report).getroot()
+              rate     = float(root.attrib.get("line-rate", 0))
+              covered  = int(root.attrib.get("lines-covered", 0))
+              valid    = int(root.attrib.get("lines-valid", 0))
+              pct      = rate * 100
+              bar_fill = int(pct / 5)
+              bar      = "█" * bar_fill + "░" * (20 - bar_fill)
+              status   = "✅" if pct >= 80 else "❌"
+
+              lines = [
+                  "### Coverage", "",
+                  f"{status} **{pct:.1f}%** &nbsp;`{bar}`&nbsp; {covered}/{valid} lines", "",
+                  "| File | Lines | Coverage |",
+                  "|:-----|------:|---------:|",
+              ]
+              for cls in root.iter("class"):
+                  fname = cls.attrib.get("filename", "").replace("collectmeteranalog/", "")
+                  r     = float(cls.attrib.get("line-rate", 0))
+                  icon  = "✅" if r >= 0.8 else "⚠️" if r >= 0.5 else "❌"
+                  stmts = sum(1 for _ in cls.iter("line"))
+                  lines.append(f"| `{fname}` | {stmts} | {icon} {r*100:.0f}% |")
+              out = "\n".join(lines) + "\n"
+
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
+              f.write(out)
+          EOF
+
       # --------------------------------------------------------
       # SCA: pip-audit (CVE-Scanning der Abhängigkeiten)
       # --------------------------------------------------------
