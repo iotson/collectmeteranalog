@@ -25,6 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Label: Confirmation dialog before permanently deleting an image
 - Label: Error handling for `shutil.move()` and `os.remove()` shows error message instead of crashing
 - Label: Polar overlay (ticks and labels) with halo effect — visible on both light and dark images (WCAG contrast ≥ 3:1)
+- Label: Prevent accidental file overwrite on rename — raises `FileExistsError` if target already exists; state updated only after successful move
+- Collect: Escape tab characters in TSV fields to prevent format corruption in `HistoricHashData.txt`
+- Collect: Hash history pruned to 30-day retention window to prevent unbounded file growth
+- Predict: Convert image to model's expected channel mode (RGB/grayscale) based on input shape
+- Predict: Use model's actual input dtype instead of hardcoded `float32` (fixes quantized model support)
 
 ## [2.0.3] - 2026-04-21
 

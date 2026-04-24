@@ -266,8 +266,10 @@ class TestRemoveSimilarImages:
         arr = (np.arange(32 * 20, dtype=np.uint8) % 256).reshape(20, 32)
         old_img = Image.fromarray(arr, mode="L")
         old_hash = imagehash.average_hash(old_img)
+        from datetime import date, timedelta
+        recent_date = (date.today() - timedelta(days=10)).strftime("%Y-%m-%d")
         hash_file.write_text(
-            f"2026-01-01\toldmeter\told.jpg\t{old_hash}\n", encoding="utf-8"
+            f"{recent_date}\toldmeter\told.jpg\t{old_hash}\n", encoding="utf-8"
         )
 
         # New image with inverted gradient → hash differs significantly
