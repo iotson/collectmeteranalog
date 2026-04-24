@@ -6,7 +6,6 @@ import shutil
 import numpy as np
 import pandas as pd
 from PIL import Image
-from PIL.ImageQt import ImageQt
 
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QGraphicsView, QGraphicsScene,
@@ -63,7 +62,9 @@ class PolarOverlayView(QGraphicsView):
 
     def set_image(self, pil_image):
         """Display a PIL image."""
-        self._current_qimage = ImageQt(pil_image.convert("RGBA"))
+        rgba = pil_image.convert("RGBA")
+        data = rgba.tobytes("raw", "RGBA")
+        self._current_qimage = QImage(data, rgba.width, rgba.height, QImage.Format.Format_RGBA8888)
         pixmap = QPixmap.fromImage(self._current_qimage)
         if self._pixmap_item is None:
             self._pixmap_item = self._scene.addPixmap(pixmap)
@@ -492,8 +493,10 @@ class LabelingWindow(QMainWindow):
         )
         try:
             if self.filename != new_path:
-                self.files[self.i] = new_path
+                if os.path.exists(new_path):
+                    raise FileExistsError(f"Target file already exists: {new_path}")
                 shutil.move(self.filename, new_path)
+                self.files[self.i] = new_path
             self._flash_save_button()
         except OSError as e:
             QMessageBox.critical(

@@ -53,6 +53,10 @@ def predict(image):
     output_index = interpreter.get_output_details()[0]["index"]
 
     resized = image.resize((input_shape[2], input_shape[1]))
+    if input_shape[3] == 3:
+        resized = resized.convert("RGB")
+    elif input_shape[3] == 1:
+        resized = resized.convert("L")
     tensor = np.expand_dims(np.array(resized).astype(np.float32), axis=0)
     interpreter.set_tensor(input_index, tensor)
     interpreter.invoke()
@@ -107,7 +111,7 @@ def _detect_model_type():
     global interpreter
     try:
         input_details = interpreter.get_input_details()
-        dummy = np.zeros(input_details[0]["shape"], dtype=np.float32)
+        dummy = np.zeros(input_details[0]["shape"], dtype=input_details[0]["dtype"])
         interpreter.set_tensor(input_details[0]["index"], dummy)
         interpreter.invoke()
         output = interpreter.get_tensor(interpreter.get_output_details()[0]["index"])
