@@ -211,7 +211,7 @@ class TestRemoveSimilarImages:
         p1 = tmp_path / "a.jpg"
         p2 = tmp_path / "b.jpg"
         # Use gradient images so hashes are meaningful
-        arr1 = (np.arange(32 * 20, dtype=np.uint8) % 256).reshape(20, 32)
+        arr1 = np.arange(32 * 20, dtype=np.uint8).reshape(20, 32)
         arr2 = (255 - arr1).astype(np.uint8)
         Image.fromarray(arr1, mode="L").convert("RGB").save(p1)
         Image.fromarray(arr2, mode="L").convert("RGB").save(p2)
@@ -263,7 +263,7 @@ class TestRemoveSimilarImages:
         hash_file = data_dir / "HistoricHashData.txt"
 
         # Create a gradient image and compute its hash to write as historic entry
-        arr = (np.arange(32 * 20, dtype=np.uint8) % 256).reshape(20, 32)
+        arr = np.arange(32 * 20, dtype=np.uint8).reshape(20, 32)
         old_img = Image.fromarray(arr, mode="L")
         old_hash = imagehash.average_hash(old_img)
         from datetime import date, timedelta
