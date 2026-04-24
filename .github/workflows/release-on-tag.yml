@@ -21,7 +21,7 @@ jobs:
       # -----------------------------------------------------------------------
       # 1. Checkout – full history so we can push the bump commit back
       # -----------------------------------------------------------------------
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           # PAT required because main is branch-protected (GITHUB_TOKEN cannot push there)
