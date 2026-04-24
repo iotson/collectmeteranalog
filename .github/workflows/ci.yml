@@ -102,6 +102,49 @@ jobs:
             --severity-level medium \
             --confidence-level medium
 
+      - name: Bandit summary
+        if: always()
+        run: |
+          python - << 'EOF'
+          import json, os, pathlib
+
+          report = pathlib.Path("bandit-report.json")
+          if not report.exists():
+              out = "### Bandit SAST\n\n> Report not available.\n"
+          else:
+              data    = json.loads(report.read_text())
+              totals  = data.get("metrics", {}).get("_totals", {})
+              results = data.get("results", [])
+              loc     = int(totals.get("loc", 0))
+              high    = int(totals.get("SEVERITY.HIGH", 0))
+              medium  = int(totals.get("SEVERITY.MEDIUM", 0))
+              low     = int(totals.get("SEVERITY.LOW", 0))
+              skipped = int(totals.get("skipped_tests", 0))
+
+              status = "✅ No issues found" if not results else f"⚠️ {len(results)} issue(s) found"
+              lines = [
+                  "### Bandit SAST", "",
+                  f"**{status}** &nbsp;·&nbsp; {loc} lines scanned &nbsp;·&nbsp; {skipped} test(s) suppressed (`#nosec`)", "",
+                  "| Severity | Count |",
+                  "|:---------|------:|",
+                  f"| 🔴 High   | {high} |",
+                  f"| 🟡 Medium | {medium} |",
+                  f"| 🔵 Low    | {low} |",
+              ]
+              if results:
+                  lines += ["", "#### Findings", "",
+                             "| File | Line | Severity | Confidence | Test | Description |",
+                             "|------|-----:|:---------|:-----------|:-----|:------------|"]
+                  for r in results:
+                      fname = r["filename"].replace("collectmeteranalog/collectmeteranalog/", "").replace("collectmeteranalog/", "")
+                      desc  = r["issue_text"][:80].rstrip()
+                      lines.append(f"| `{fname}` | {r['line_number']} | {r['issue_severity']} | {r['issue_confidence']} | {r['test_id']} | {desc} |")
+              out = "\n".join(lines) + "\n"
+
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
+              f.write(out)
+          EOF
+
       - name: Upload bandit report
         uses: actions/upload-artifact@v7
         if: always()
