@@ -18,7 +18,7 @@ class TestCLI:
             with pytest.raises(SystemExit) as exc:
                 main()
             assert exc.value.code == 0
-        assert "1.2.0" in capsys.readouterr().out
+        assert "2.0.3" in capsys.readouterr().out
 
     def test_labeling_missing_path(self):
         from collectmeteranalog.__main__ import main
