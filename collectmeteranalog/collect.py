@@ -30,10 +30,14 @@ def yesterday(daysbefore=1):
 def readimages(servername, output_dir, daysback=3):
     '''get all images taken within defined days back and store it in target path'''
     
-    if not servername.startswith("http://"):
+    if not servername.startswith(("http://", "https://")):
         serverurl = "http://" + servername
     else:
         serverurl = servername
+
+    from urllib.parse import urlparse
+    if urlparse(serverurl).scheme not in ("http", "https"):
+        raise ValueError(f"Only http/https URLs are supported: {serverurl!r}")
 
     print(f"Download images from {serverurl} ...")
     count = 0
@@ -51,7 +55,7 @@ def readimages(servername, output_dir, daysback=3):
             try:
                 print("Download images from folder: /fileserver/log/analog/" + picturedate + "/" + hour)
                 url_list = f"{serverurl}/fileserver/log/analog/{picturedate}/{hour}/"
-                fp = urllib.request.urlopen(url_list)
+                fp = urllib.request.urlopen(url_list)  # nosec B310 — scheme validated above
                 url_list_str = fp.read().decode("utf8")
                 fp.close()
 

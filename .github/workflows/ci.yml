@@ -1,0 +1,219 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  # ============================================================
+  # JOB 1: Tests + Coverage + SCA (pip-audit) + SAST (Bandit)
+  # ============================================================
+  test:
+    name: Tests, Coverage, SCA & SAST (Bandit)
+    runs-on: ubuntu-latest
+
+    env:
+      QT_QPA_PLATFORM: offscreen
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install Qt system dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends \
+            libgl1 libegl1 libxkbcommon0 libdbus-1-3
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+
+      # --------------------------------------------------------
+      # Tests mit Coverage
+      # --------------------------------------------------------
+      - name: Run pytest with coverage
+        run: |
+          pytest tests/ \
+            --cov=collectmeteranalog \
+            --cov-report=xml:coverage.xml \
+            --cov-report=term-missing \
+            --cov-fail-under=80
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage.xml
+
+      - name: Coverage summary
+        if: always()
+        run: |
+          python - << 'EOF'
+          import os, pathlib
+          import xml.etree.ElementTree as ET
+
+          report = pathlib.Path("coverage.xml")
+          if not report.exists():
+              out = "### Coverage\n\n> Report not available.\n"
+          else:
+              root = ET.parse(report).getroot()
+              rate     = float(root.attrib.get("line-rate", 0))
+              covered  = int(root.attrib.get("lines-covered", 0))
+              valid    = int(root.attrib.get("lines-valid", 0))
+              pct      = rate * 100
+              bar_fill = int(pct / 5)
+              bar      = "█" * bar_fill + "░" * (20 - bar_fill)
+              status   = "✅" if pct >= 80 else "❌"
+
+              lines = [
+                  "### Coverage", "",
+                  f"{status} **{pct:.1f}%** &nbsp;`{bar}`&nbsp; {covered}/{valid} lines", "",
+                  "| File | Lines | Coverage |",
+                  "|:-----|------:|---------:|",
+              ]
+              for cls in root.iter("class"):
+                  fname = cls.attrib.get("filename", "").replace("collectmeteranalog/", "")
+                  r     = float(cls.attrib.get("line-rate", 0))
+                  icon  = "✅" if r >= 0.8 else "⚠️" if r >= 0.5 else "❌"
+                  stmts = sum(1 for _ in cls.iter("line"))
+                  lines.append(f"| `{fname}` | {stmts} | {icon} {r*100:.0f}% |")
+              out = "\n".join(lines) + "\n"
+
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
+              f.write(out)
+          EOF
+
+      # --------------------------------------------------------
+      # SCA: pip-audit (CVE-Scanning der Abhängigkeiten)
+      # --------------------------------------------------------
+      - name: Install pip-audit
+        if: always()
+        run: pip install pip-audit
+
+      - name: Run pip-audit (SCA)
+        if: always()
+        run: |
+          pip-audit \
+            --requirement requirements.txt \
+            --format json \
+            -o pip-audit-report.json
+
+      - name: Upload pip-audit report
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: pip-audit-report
+          path: pip-audit-report.json
+
+      # --------------------------------------------------------
+      # SAST: Bandit (Python-spezifische Sicherheitsanalyse)
+      # --------------------------------------------------------
+      - name: Install bandit
+        if: always()
+        run: pip install bandit[toml]
+
+      - name: Run bandit (SAST)
+        if: always()
+        run: |
+          bandit \
+            -r collectmeteranalog/ \
+            -f json \
+            -o bandit-report.json \
+            --severity-level medium \
+            --confidence-level medium
+
+      - name: Bandit summary
+        if: always()
+        run: |
+          python - << 'EOF'
+          import json, os, pathlib
+
+          report = pathlib.Path("bandit-report.json")
+          if not report.exists():
+              out = "### Bandit SAST\n\n> Report not available.\n"
+          else:
+              data    = json.loads(report.read_text())
+              totals  = data.get("metrics", {}).get("_totals", {})
+              results = data.get("results", [])
+              loc     = int(totals.get("loc", 0))
+              high    = int(totals.get("SEVERITY.HIGH", 0))
+              medium  = int(totals.get("SEVERITY.MEDIUM", 0))
+              low     = int(totals.get("SEVERITY.LOW", 0))
+              skipped = int(totals.get("skipped_tests", 0))
+
+              status = "✅ No issues found" if not results else f"⚠️ {len(results)} issue(s) found"
+              lines = [
+                  "### Bandit SAST", "",
+                  f"**{status}** &nbsp;·&nbsp; {loc} lines scanned &nbsp;·&nbsp; {skipped} test(s) suppressed (`#nosec`)", "",
+                  "| Severity | Count |",
+                  "|:---------|------:|",
+                  f"| 🔴 High   | {high} |",
+                  f"| 🟡 Medium | {medium} |",
+                  f"| 🔵 Low    | {low} |",
+              ]
+              if results:
+                  lines += ["", "#### Findings", "",
+                             "| File | Line | Severity | Confidence | Test | Description |",
+                             "|------|-----:|:---------|:-----------|:-----|:------------|"]
+                  for r in results:
+                      fname = r["filename"].replace("collectmeteranalog/collectmeteranalog/", "").replace("collectmeteranalog/", "")
+                      desc  = r["issue_text"][:80].rstrip()
+                      lines.append(f"| `{fname}` | {r['line_number']} | {r['issue_severity']} | {r['issue_confidence']} | {r['test_id']} | {desc} |")
+              out = "\n".join(lines) + "\n"
+
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
+              f.write(out)
+          EOF
+
+      - name: Upload bandit report
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: bandit-report
+          path: bandit-report.json
+
+  # ============================================================
+  # JOB 2: CodeQL (SAST - separater Job wegen security-events-Permission)
+  # ============================================================
+  codeql:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: python
+          queries: security-and-quality
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:python"
