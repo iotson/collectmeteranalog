@@ -23,6 +23,7 @@ jobs:
       # -----------------------------------------------------------------------
       - uses: actions/checkout@v6
         with:
+          ref: main
           fetch-depth: 0
           # PAT required because main is branch-protected (GITHUB_TOKEN cannot push there)
           token: ${{ secrets.PAT_TOKEN }}
