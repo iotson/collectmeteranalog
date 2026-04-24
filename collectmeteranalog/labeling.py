@@ -12,9 +12,9 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QGraphicsView, QGraphicsScene,
     QGraphicsPixmapItem, QGraphicsLineItem, QGraphicsTextItem,
     QPushButton, QSlider, QLabel, QVBoxLayout, QHBoxLayout,
-    QGridLayout, QWidget, QSizePolicy
+    QGridLayout, QWidget, QSizePolicy, QMessageBox, QProgressBar
 )
-from PySide6.QtCore import Qt, QLineF, QPointF
+from PySide6.QtCore import Qt, QLineF, QPointF, QTimer
 from PySide6.QtGui import (
     QPixmap, QImage, QPen, QColor, QFont, QKeySequence, QShortcut,
     QPainter, QBrush
@@ -125,11 +125,17 @@ class PolarOverlayView(QGraphicsView):
         tick_len = radius * 0.03
         major_tick_len = radius * 0.055
 
-        # Pointer line
+        # Outline-Stärken für Halo-Effekt (dunkel → hell, sichtbar auf jedem Hintergrund)
+        pointer_w = max(2, radius * 0.015)
+        pointer_outline_w = pointer_w + max(2, radius * 0.01)
+
+        # Pointer: erst dunkler Halo, dann grüne Linie oben drauf
         angle_rad = 2 * math.pi * self._filelabel / 10.0
         px = cx + radius * math.sin(angle_rad)
         py = cy - radius * math.cos(angle_rad)
-        painter.setPen(QPen(QColor(0, 200, 0), max(2, radius * 0.015)))
+        painter.setPen(QPen(QColor(0, 0, 0, 180), pointer_outline_w, Qt.SolidLine, Qt.RoundCap))
+        painter.drawLine(QPointF(cx, cy), QPointF(px, py))
+        painter.setPen(QPen(QColor(0, 220, 0), pointer_w, Qt.SolidLine, Qt.RoundCap))
         painter.drawLine(QPointF(cx, cy), QPointF(px, py))
 
         if not self._grid_visible:
@@ -137,8 +143,17 @@ class PolarOverlayView(QGraphicsView):
 
         # Ticks and labels
         num_ticks = int(100 / self._ticksteps)
-        minor_pen = QPen(QColor(255, 255, 0, 180), max(1, radius * 0.004))
-        major_pen = QPen(QColor(255, 255, 0, 220), max(1.5, radius * 0.007))
+
+        minor_w = max(1, radius * 0.004)
+        major_w = max(1.5, radius * 0.007)
+        # Halo-Stift: dunkle Umrandung (breiter als die helle Linie)
+        minor_outline_pen = QPen(QColor(0, 0, 0, 160), minor_w + max(1, radius * 0.004),
+                                 Qt.SolidLine, Qt.RoundCap)
+        major_outline_pen = QPen(QColor(0, 0, 0, 200), major_w + max(1.5, radius * 0.006),
+                                 Qt.SolidLine, Qt.RoundCap)
+        # Helle Vordergrundstriche
+        minor_pen = QPen(QColor(255, 255, 0, 230), minor_w, Qt.SolidLine, Qt.RoundCap)
+        major_pen = QPen(QColor(255, 255, 0, 255), major_w, Qt.SolidLine, Qt.RoundCap)
 
         font_size = max(10, int(radius * 0.05))
         font = QFont("sans-serif", font_size)
@@ -153,16 +168,19 @@ class PolarOverlayView(QGraphicsView):
             cos_a = math.cos(a)
             is_major = abs(val - round(val)) < 0.01
 
-            # Tick mark
             tl = major_tick_len if is_major else tick_len
-            painter.setPen(major_pen if is_major else minor_pen)
             x1 = cx + (radius - tl) * sin_a
             y1 = cy - (radius - tl) * cos_a
             x2 = cx + radius * sin_a
             y2 = cy - radius * cos_a
+
+            # Tick: erst dunkler Halo, dann helle Linie
+            painter.setPen(major_outline_pen if is_major else minor_outline_pen)
+            painter.drawLine(QPointF(x1, y1), QPointF(x2, y2))
+            painter.setPen(major_pen if is_major else minor_pen)
             painter.drawLine(QPointF(x1, y1), QPointF(x2, y2))
 
-            # Text labels only at major ticks (0, 1, ..., 9)
+            # Zahlen nur an Haupt-Ticks (0, 1, ..., 9)
             if is_major:
                 label_text = f"{int(val)}"
                 label_dist = radius + major_tick_len + 4
@@ -171,15 +189,15 @@ class PolarOverlayView(QGraphicsView):
                 tw = fm.horizontalAdvance(label_text)
                 th = fm.height()
 
-                # Dark background
+                # Dunkler Hintergrund (höhere Deckkraft für bessere Lesbarkeit)
                 painter.setPen(Qt.NoPen)
-                painter.setBrush(QBrush(QColor(0, 0, 0, 160)))
+                painter.setBrush(QBrush(QColor(0, 0, 0, 210)))
                 painter.drawRoundedRect(
-                    int(lx - tw / 2 - 2), int(ly - th / 2 - 1),
-                    tw + 4, th + 2, 3, 3
+                    int(lx - tw / 2 - 3), int(ly - th / 2 - 2),
+                    tw + 6, th + 4, 4, 4
                 )
 
-                # Yellow text
+                # Gelber Text
                 painter.setPen(QColor(255, 255, 0))
                 painter.setBrush(Qt.NoBrush)
                 painter.drawText(
@@ -194,7 +212,7 @@ class PolarOverlayView(QGraphicsView):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
-            cx, cy, radius = self._get_viewport_center_and_radius()
+            cx, cy, _radius = self._get_viewport_center_and_radius()
             if cx is not None:
                 dx = event.pos().x() - cx
                 dy = -(event.pos().y() - cy)
@@ -206,6 +224,27 @@ class PolarOverlayView(QGraphicsView):
                 if isinstance(window, LabelingWindow):
                     window.set_filelabel(val)
         super().mousePressEvent(event)
+
+
+_BTN_STYLE = (
+    "QPushButton { background: #555; color: white; padding: 6px; "
+    "border-radius: 3px; }"
+    "QPushButton:hover { background: #777; }"
+)
+_BTN_SAVE_FLASH_STYLE = (
+    "QPushButton { background: #27ae60; color: white; padding: 6px; "
+    "border-radius: 3px; }"
+)
+_BTN_GRID_ON_STYLE = (
+    "QPushButton { background: #2980b9; color: white; padding: 6px; "
+    "border-radius: 3px; }"
+    "QPushButton:hover { background: #3498db; }"
+)
+_BTN_GRID_OFF_STYLE = (
+    "QPushButton { background: #555; color: white; padding: 6px; "
+    "border-radius: 3px; }"
+    "QPushButton:hover { background: #777; }"
+)
 
 
 class LabelingWindow(QMainWindow):
@@ -230,6 +269,7 @@ class LabelingWindow(QMainWindow):
         )
         self._show_image(img)
         self._update_title()
+        self._update_progress()
 
     def _setup_ui(self):
         self.setWindowTitle(f"collectmeteranalog v{__version__}")
@@ -248,60 +288,87 @@ class LabelingWindow(QMainWindow):
         right_panel = QVBoxLayout()
         right_panel.setSpacing(8)
 
-        # Prediction label
+        # Prediction label – dark-theme-konform
         self.pred_label = QLabel("Prediction\ndisabled")
         self.pred_label.setAlignment(Qt.AlignCenter)
         self.pred_label.setStyleSheet(
-            "background: #f8f8f8; color: #333; padding: 8px; "
-            "border-radius: 4px; font-size: 13px;"
+            "background: #2a2a2a; color: #e0e0e0; padding: 8px; "
+            "border-radius: 4px; font-size: 13px; border: 1px solid #444;"
         )
         right_panel.addWidget(self.pred_label)
 
         right_panel.addStretch()
 
-        # Grid toggle
-        btn_grid = QPushButton("Grid")
-        btn_grid.clicked.connect(self._on_toggle_grid)
-        right_panel.addWidget(btn_grid)
+        # Grid-Toggle mit An/Aus-Zustand
+        self.btn_grid = QPushButton("Grid: An")
+        self.btn_grid.setToolTip("Grid ein-/ausblenden (G)")
+        self.btn_grid.clicked.connect(self._on_toggle_grid)
+        self.btn_grid.setStyleSheet(_BTN_GRID_ON_STYLE)
+        right_panel.addWidget(self.btn_grid)
 
         right_panel.addStretch()
 
-        # +/- buttons
+        # +/- Buttons: feine Schritte oben, grobe unten
         btn_layout = QGridLayout()
-        btn_dec1 = QPushButton("-1.0")
         btn_dec01 = QPushButton("-0.1")
         btn_inc01 = QPushButton("+0.1")
+        btn_dec1 = QPushButton("-1.0")
         btn_inc1 = QPushButton("+1.0")
-        btn_dec1.clicked.connect(lambda: self._change_label(-1.0))
+        btn_dec01.setToolTip("Label -0.1 (Pfeil runter)")
+        btn_inc01.setToolTip("Label +0.1 (Pfeil hoch)")
+        btn_dec1.setToolTip("Label -1.0 (Bild runter)")
+        btn_inc1.setToolTip("Label +1.0 (Bild hoch)")
         btn_dec01.clicked.connect(lambda: self._change_label(-0.1))
         btn_inc01.clicked.connect(lambda: self._change_label(0.1))
+        btn_dec1.clicked.connect(lambda: self._change_label(-1.0))
         btn_inc1.clicked.connect(lambda: self._change_label(1.0))
-        btn_layout.addWidget(btn_dec1, 0, 0)
-        btn_layout.addWidget(btn_inc1, 0, 1)
-        btn_layout.addWidget(btn_dec01, 1, 0)
-        btn_layout.addWidget(btn_inc01, 1, 1)
+        btn_layout.addWidget(btn_dec01, 0, 0)
+        btn_layout.addWidget(btn_inc01, 0, 1)
+        btn_layout.addWidget(btn_dec1, 1, 0)
+        btn_layout.addWidget(btn_inc1, 1, 1)
         right_panel.addLayout(btn_layout)
 
         right_panel.addStretch()
 
-        # Previous / Update / Delete
-        btn_previous = QPushButton("Previous")
-        btn_update = QPushButton("Update")
+        # Shortcut-Legende
+        shortcut_label = QLabel(
+            "← → Bild wechseln\n"
+            "↑ ↓  ±0.1\n"
+            "PgUp/Dn  ±1.0\n"
+            "Enter  Speichern\n"
+            "Del  Löschen"
+        )
+        shortcut_label.setStyleSheet(
+            "color: #aaa; font-size: 12px; padding: 4px;"
+        )
+        right_panel.addWidget(shortcut_label)
+
+        right_panel.addStretch()
+
+        # Previous / Save & Next / Delete
+        btn_previous = QPushButton("◀  Previous")
+        btn_previous.setToolTip("Vorheriges Bild (Pfeil links)")
+        self.btn_save = QPushButton("Save & Next  ▶")
+        self.btn_save.setToolTip("Label speichern und weiter (Enter / Pfeil rechts)")
         btn_delete = QPushButton("Delete")
+        btn_delete.setToolTip("Bild unwiderruflich löschen (Entf)")
         btn_delete.setStyleSheet(
-            "QPushButton { background: #c0392b; color: white; padding: 6px; }"
+            "QPushButton { background: #c0392b; color: white; padding: 6px; "
+            "border-radius: 3px; }"
             "QPushButton:hover { background: #e74c3c; }"
         )
         btn_previous.clicked.connect(self._on_previous)
-        btn_update.clicked.connect(self._on_next)
+        self.btn_save.clicked.connect(self._on_next)
         btn_delete.clicked.connect(self._on_remove)
         right_panel.addWidget(btn_previous)
-        right_panel.addWidget(btn_update)
+        right_panel.addWidget(self.btn_save)
         right_panel.addWidget(btn_delete)
 
         main_layout.addLayout(right_panel)
 
-        # Slider (bottom)
+        # Slider + Fortschrittsbalken (unten)
+        bottom_layout = QVBoxLayout()
+
         slider_layout = QHBoxLayout()
         self.slider_value_label = QLabel("0.0")
         self.slider_value_label.setMinimumWidth(35)
@@ -321,25 +388,41 @@ class LabelingWindow(QMainWindow):
         slider_layout.addWidget(self.slider, stretch=1)
         slider_layout.addWidget(self.slider_value_label)
 
-        # Wrap main_layout and slider in a vertical layout
+        # Fortschrittsbalken
+        progress_layout = QHBoxLayout()
+        progress_label = QLabel("Fortschritt:")
+        progress_label.setStyleSheet("font-size: 11px; color: #aaa;")
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 1)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setTextVisible(True)
+        self.progress_bar.setFixedHeight(14)
+        self.progress_bar.setStyleSheet(
+            "QProgressBar { background: #2a2a2a; border: 1px solid #444; "
+            "border-radius: 3px; text-align: center; font-size: 10px; color: #ccc; }"
+            "QProgressBar::chunk { background: #2980b9; border-radius: 2px; }"
+        )
+        progress_layout.addWidget(progress_label)
+        progress_layout.addWidget(self.progress_bar, stretch=1)
+
+        bottom_layout.addLayout(slider_layout)
+        bottom_layout.addLayout(progress_layout)
+
+        # Alles zusammenfügen
         outer = QVBoxLayout()
         content_widget = QWidget()
         content_widget.setLayout(main_layout)
         outer.addWidget(content_widget, stretch=1)
-        outer.addLayout(slider_layout)
+        outer.addLayout(bottom_layout)
 
         wrapper = QWidget()
         wrapper.setLayout(outer)
         self.setCentralWidget(wrapper)
 
-        # Style buttons
-        for btn in [btn_grid, btn_dec1, btn_dec01, btn_inc01, btn_inc1,
-                    btn_previous, btn_update]:
-            btn.setStyleSheet(
-                "QPushButton { background: #555; color: white; padding: 6px; "
-                "border-radius: 3px; }"
-                "QPushButton:hover { background: #777; }"
-            )
+        # Standard-Button-Styles
+        for btn in [btn_previous, self.btn_save,
+                    btn_dec01, btn_inc01, btn_dec1, btn_inc1]:
+            btn.setStyleSheet(_BTN_STYLE)
 
     def _setup_shortcuts(self):
         QShortcut(QKeySequence(Qt.Key_Right), self, self._on_next)
@@ -375,6 +458,13 @@ class LabelingWindow(QMainWindow):
             f"Image: {self.i + 1} / {len(self.files)}"
         )
 
+    def _update_progress(self):
+        total = len(self.files)
+        current = self.i + 1
+        self.progress_bar.setRange(0, total)
+        self.progress_bar.setValue(current)
+        self.progress_bar.setFormat(f"{current} / {total}")
+
     def _update_prediction(self, img):
         prediction = predict(img)
         if (prediction == -1 and self.labelfile_prediction is not None
@@ -409,21 +499,50 @@ class LabelingWindow(QMainWindow):
         self._load_current()
 
     def _on_next(self):
-        # Save current label by renaming file
         basename = os.path.basename(self.filename).split('_', 1)
         basename = basename[-1]
         new_path = os.path.join(
             os.path.dirname(self.filename),
             f"{self.filelabel:.1f}_{basename}"
         )
-        if self.filename != new_path:
-            self.files[self.i] = new_path
-            shutil.move(self.filename, new_path)
+        try:
+            if self.filename != new_path:
+                self.files[self.i] = new_path
+                shutil.move(self.filename, new_path)
+            self._flash_save_button()
+        except OSError as e:
+            QMessageBox.critical(
+                self, "Fehler beim Speichern",
+                f"Das Label konnte nicht gespeichert werden:\n{e}"
+            )
+            return
         self.i = (self.i + 1) % len(self.files)
         self._load_current()
 
+    def _flash_save_button(self):
+        """Kurzes grünes Aufleuchten als Speicher-Feedback."""
+        self.btn_save.setStyleSheet(_BTN_SAVE_FLASH_STYLE)
+        QTimer.singleShot(300, lambda: self.btn_save.setStyleSheet(_BTN_STYLE))
+
     def _on_remove(self):
-        os.remove(self.filename)
+        reply = QMessageBox.question(
+            self,
+            "Bild löschen",
+            f"Soll dieses Bild unwiderruflich gelöscht werden?\n\n"
+            f"{os.path.basename(self.filename)}",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return
+        try:
+            os.remove(self.filename)
+        except OSError as e:
+            QMessageBox.critical(
+                self, "Fehler beim Löschen",
+                f"Das Bild konnte nicht gelöscht werden:\n{e}"
+            )
+            return
         self.files.pop(self.i)
         if len(self.files) == 0:
             print("No more images.")
@@ -436,6 +555,12 @@ class LabelingWindow(QMainWindow):
         self.usegrid = not self.usegrid
         self.view.set_grid_visible(self.usegrid)
         self._update_overlay()
+        if self.usegrid:
+            self.btn_grid.setText("Grid: An")
+            self.btn_grid.setStyleSheet(_BTN_GRID_ON_STYLE)
+        else:
+            self.btn_grid.setText("Grid: Aus")
+            self.btn_grid.setStyleSheet(_BTN_GRID_OFF_STYLE)
 
     def _load_current(self):
         img, self.filelabel, self.filename, self.i = load_image(
@@ -443,6 +568,7 @@ class LabelingWindow(QMainWindow):
         )
         self._show_image(img)
         self._update_title()
+        self._update_progress()
 
 
 def label(path, startlabel=0.0, labelfile_path=None, ticksteps=1):

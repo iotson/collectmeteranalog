@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Label: Fortschrittsbalken zeigt aktuelles Bild und Gesamtanzahl an (`X / N`)
+- Label: Shortcut-Legende im rechten Panel sichtbar (← →  ↑ ↓  PgUp/Dn  Enter  Del)
+- Label: Tooltips auf allen Buttons mit Tastenkürzel-Hinweis
+
+### Changed
+- Label: Prediction-Label im Dark-Theme – heller Hintergrund durch dunklen ersetzt (`#2a2a2a`)
+- Label: Button „Update" umbenannt in „Save & Next" (klarere Semantik)
+- Label: Grid-Button zeigt An/Aus-Zustand farblich an (blau = aktiv, grau = inaktiv)
+- Label: +/−-Buttons umsortiert – feine Schritte (±0.1) oben, grobe (±1.0) unten
+- Label: Visuelles Speicher-Feedback – „Save & Next" leuchtet kurz grün nach erfolgreichem Speichern
+
+### Fixed
+- Label: Bestätigungsdialog vor dem unwiderruflichen Löschen eines Bildes
+- Label: Fehlerbehandlung bei `shutil.move()` und `os.remove()` mit Fehlermeldung statt Absturz
+- Label: Polar-Overlay (Striche und Zahlen) mit Halo-Effekt – sichtbar auf hellen und dunklen Bildern (WCAG `contrast-data` ≥ 3:1)
+
 ## [2.0.3] - 2026-04-21
 
 ## [2.0.2] - 2026-04-21

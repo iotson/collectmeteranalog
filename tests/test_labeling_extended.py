@@ -1,10 +1,12 @@
 import os
 import shutil
 import math
+from unittest.mock import patch
 
 import numpy as np
 import pytest
 from PIL import Image
+from PySide6.QtWidgets import QMessageBox
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("DISPLAY") is None and os.environ.get("WAYLAND_DISPLAY") is None
@@ -52,7 +54,9 @@ class TestLabelingWindowNavigation:
         w = self._make_window(tmp_image_dir)
         file_to_delete = w.filename
         initial_count = len(w.files)
-        w._on_remove()
+        with patch("collectmeteranalog.labeling.QMessageBox.question",
+                   return_value=QMessageBox.Yes):
+            w._on_remove()
         assert not os.path.exists(file_to_delete)
         assert len(w.files) == initial_count - 1
         w.close()
@@ -64,7 +68,9 @@ class TestLabelingWindowNavigation:
         img.save(tmp_path / "5.0_only.jpg")
         files = [str(tmp_path / "5.0_only.jpg")]
         w = LabelingWindow(np.array(files), 0.0, 1, None)
-        w._on_remove()
+        with patch("collectmeteranalog.labeling.QMessageBox.question",
+                   return_value=QMessageBox.Yes):
+            w._on_remove()
         # Window should have closed (no crash)
 
     def test_slider_updates_label(self, tmp_image_dir):
