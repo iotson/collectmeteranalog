@@ -492,8 +492,10 @@ class LabelingWindow(QMainWindow):
         )
         try:
             if self.filename != new_path:
-                self.files[self.i] = new_path
+                if os.path.exists(new_path):
+                    raise FileExistsError(f"Target file already exists: {new_path}")
                 shutil.move(self.filename, new_path)
+                self.files[self.i] = new_path
             self._flash_save_button()
         except OSError as e:
             QMessageBox.critical(

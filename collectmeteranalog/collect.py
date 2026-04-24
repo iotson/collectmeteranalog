@@ -128,7 +128,9 @@ def readimages(servername, output_dir, daysback=3):
 def save_hash_file(images, hashfilename):
     with open(hashfilename, 'w', encoding='utf-8') as f:
         for img_hash, img, meter, today in images:
-            f.write(today + "\t" + meter + "\t" + img + "\t" + str(img_hash) + '\n')
+            s_meter = meter.replace("\t", " ")
+            s_img = img.replace("\t", " ")
+            f.write(f"{today}\t{s_meter}\t{s_img}\t{img_hash}\n")
 
 
 def load_hash_file(hashfilename):
@@ -189,6 +191,11 @@ def remove_similar_images(path, image_filenames, meter, similarbits=2, hashfunc=
     for entry in images:
         if entry[1] not in duplicates:
             historic_hashes.append(entry)
+
+    # Retention policy: keep only entries from the last 30 days
+    cutoff = (date.today() - timedelta(days=30)).strftime("%Y-%m-%d")
+    historic_hashes = [h for h in historic_hashes if h[3] >= cutoff]
+
     save_hash_file(historic_hashes, hash_file)
 
     # Remove or relocate duplicates
