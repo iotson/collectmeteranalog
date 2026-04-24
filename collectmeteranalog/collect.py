@@ -10,6 +10,7 @@ import imagehash
 import secrets
 import shutil
 from collectmeteranalog.labeling import label
+from collectmeteranalog.utils import ziffer_data_files
 import time
 import numpy as np
 
@@ -125,117 +126,96 @@ def readimages(servername, output_dir, daysback=3):
 
 
 def save_hash_file(images, hashfilename):
-    f =  open(hashfilename, 'w', encoding='utf-8')
-    for hash, img, meter, datum in images:
-        f.write(datum + "\t" + meter+ "\t" + img + "\t" + str(hash)+'\n');
-    f.close
+    with open(hashfilename, 'w', encoding='utf-8') as f:
+        for img_hash, img, meter, today in images:
+            f.write(today + "\t" + meter + "\t" + img + "\t" + str(img_hash) + '\n')
 
 
 def load_hash_file(hashfilename):
     images = []
 
     try:
-        file1 = open(hashfilename, 'r')
-        Lines = file1.readlines()
-        file1.close
-    except Exception as e:
-        print('No historic Hashdata could be loaded (' + hashfilename + ')')
+        with open(hashfilename, 'r') as f:
+            lines = f.readlines()
+    except OSError as e:
+        print(f'No historic hash data could be loaded ({hashfilename}): {e}')
         return images
 
-    for line in Lines:
+    for line in lines:
         cut = line.strip('\n').split(sep="\t")
-        datum = cut[0]
+        today = cut[0]
         meter = cut[1]
         _hash = imagehash.hex_to_hash(cut[3])
-        images.append([_hash, cut[2], meter, datum])
+        images.append([_hash, cut[2], meter, today])
     return images
 
 
-def ziffer_data_files(input_dir):
-    '''return a list of all images in given input dir in all subdirectories'''
-    imgfiles = []
-    for root, dirs, files in os.walk(input_dir):
-        for file in files:
-            if (file.endswith(".jpg")):
-                imgfiles.append(root + "/" + file)
-    return  imgfiles
+_HASH_IMAGE_SIZE = (32, 20)
 
 
-def remove_similar_images(path, image_filenames, meter, similarbits=2,  hashfunc = imagehash.average_hash, saveduplicates=False):
-    '''removes similar images.
+def remove_similar_images(path, image_filenames, meter, similarbits=2, hashfunc=imagehash.average_hash, saveduplicates=False):
+    """Remove similar or duplicate images, persisting hash history across runs."""
+    print(f"Find similar images now in {len(image_filenames)} images ...")
 
-    '''
+    today = date.today().strftime("%Y-%m-%d")
     images = []
-    count = 0
-    print(f"Find similar images now in {len(image_filenames)} images ..." )
-
-    datum = date.today().strftime("%Y-%m-%d")
-
     for img in sorted(image_filenames):
         try:
-            hash = hashfunc(Image.open(img).convert('L').resize((32,20)))
-        except Exception as e:
-            print('Problem: ', e, ' with ', img)
+            img_hash = hashfunc(Image.open(img).convert('L').resize(_HASH_IMAGE_SIZE))
+        except OSError as e:
+            print(f'Problem: {e} with {img}')
             continue
-        images.append([hash, img, meter, datum])
-  
-    if (os.path.exists(os.path.join(path, target_hash_data))):
-        HistoricHashData = load_hash_file(os.path.join(path, target_hash_data))
-    else:
-        HistoricHashData = []
+        images.append([img_hash, img, meter, today])
 
-    duplicates = {}
-    for hash in images:
-        if (hash[1] not in duplicates):
-            similarimgs = [i for i in HistoricHashData if abs(i[0]-hash[0]) < similarbits and i[1]!=hash[1]]
-            if len(similarimgs) > 0:               # es wurden in den alten hashes schon vergleichbare bilder gefunden
-                if (duplicates == {}):
-                    duplicates = {hash[1]}
-                else:
-                    duplicates |= {hash[1]}
-            else:                                   # es wird in den neuen Biler gesucht gefunden
-                similarimgs = [i for i in images if abs(i[0]-hash[0]) < similarbits and i[1]!=hash[1]]
+    hash_file = os.path.join(path, target_hash_data)
+    historic_hashes = load_hash_file(hash_file) if os.path.exists(hash_file) else []
 
-                if len(similarimgs) > 0:  # es wurden in den den neuen images schon vergleichbare bilder gefunden
+    duplicates = set()
+    for entry in images:
+        img_hash, img_path = entry[0], entry[1]
+        if img_path in duplicates:
+            continue
+        # Check against historic hashes first
+        similar_historic = [h for h in historic_hashes if abs(h[0] - img_hash) < similarbits and h[1] != img_path]
+        if similar_historic:
+            duplicates.add(img_path)
+        else:
+            # Check against new images
+            similar_new = [h for h in images if abs(h[0] - img_hash) < similarbits and h[1] != img_path]
+            if similar_new:
+                duplicates |= {row[1] for row in similar_new}
 
-                    if (duplicates == {}):
-                        duplicates = set([row[1] for row in similarimgs])
-                    else:
-                        duplicates |= set([row[1] for row in similarimgs])
+    # Persist unique images into historic hash data
+    for entry in images:
+        if entry[1] not in duplicates:
+            historic_hashes.append(entry)
+    save_hash_file(historic_hashes, hash_file)
 
-    # extend Historic Hash Data
-    for _image in images:
-        if not _image[1] in duplicates:
-            HistoricHashData.append(_image)
-    save_hash_file(HistoricHashData, os.path.join(path, target_hash_data))
-            
-    # remove now all duplicates
+    # Remove or relocate duplicates
     if saveduplicates:
-        os.makedirs(os.path.join(path, target_store_duplicates), exist_ok=True)
-        count = 0
+        duplicates_dir = os.path.join(path, target_store_duplicates)
+        os.makedirs(duplicates_dir, exist_ok=True)
         for image in duplicates:
-            count = count + 1
-            os.replace(image, os.path.join(os.path.join(path, target_store_duplicates), os.path.basename(image)))
-        print(f"{count} duplicates will moved to .../raw_images/duplicates.")
+            os.replace(image, os.path.join(duplicates_dir, os.path.basename(image)))
+        print(f"{len(duplicates)} duplicates will moved to .../raw_images/duplicates.")
     else:
-        count = 0
         for image in duplicates:
-            count = count + 1
             os.remove(image)
-        print(f"{count} duplicates will be removed.")
+        print(f"{len(duplicates)} duplicates will be removed.")
 
 
 def move_to_label(path, keepolddata, files):
     
-    os.makedirs(os.path.join(path, target_label_path), exist_ok=True)
-    if (keepolddata):
+    label_dir = os.path.join(path, target_label_path)
+    os.makedirs(label_dir, exist_ok=True)
+    if keepolddata:
         print("Copy files to folder 'labeled', keep source folder 'raw_images'")
         for file in files:
-                shutil.copy(file, os.path.join(os.path.join(path, target_label_path), os.path.basename(file)))
+            shutil.copy(file, os.path.join(label_dir, os.path.basename(file)))
     else:
         print("Move files to folder 'labeled' and cleanup source folder 'raw_images'")
         for file in files:
-            os.replace(file, os.path.join(os.path.join(path, target_label_path), os.path.basename(file)))
+            os.replace(file, os.path.join(label_dir, os.path.basename(file)))
 
         shutil.rmtree(os.path.join(path, target_raw_path))
 
@@ -249,12 +229,14 @@ def collect(meter, path, days, keepolddata=False, download=True, startlabel=0, s
         print("Download images")
         readimages(meter, os.path.join(path, target_raw_path), days)
     
+    meter_raw_path = os.path.join(path, target_raw_path, meter)
+
     # remove all same or similar images and remove the empty folders
-    remove_similar_images(path, ziffer_data_files(os.path.join(os.path.join(path, target_raw_path), meter)), 
+    remove_similar_images(path, ziffer_data_files(meter_raw_path),
                           meter, saveduplicates=saveduplicates, similarbits=similarbits)
 
     # move or copy the files in one zip without directory structure and optional cleanup source
-    move_to_label(path, keepolddata, ziffer_data_files(os.path.join(os.path.join(path, target_raw_path), meter)))
+    move_to_label(path, keepolddata, ziffer_data_files(meter_raw_path))
 
     # label images
     label(os.path.join(path, target_label_path), startlabel=startlabel, ticksteps=ticksteps)

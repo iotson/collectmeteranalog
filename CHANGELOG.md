@@ -8,21 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Label: Fortschrittsbalken zeigt aktuelles Bild und Gesamtanzahl an (`X / N`)
-- Label: Shortcut-Legende im rechten Panel sichtbar (← →  ↑ ↓  PgUp/Dn  Enter  Del)
-- Label: Tooltips auf allen Buttons mit Tastenkürzel-Hinweis
+- Label: Progress bar shows current image index and total count (`X / N`)
+- Label: Shortcut legend visible in right panel (← →  ↑ ↓  PgUp/Dn  Enter  Del)
+- Label: Tooltips on all buttons with keyboard shortcut hints
 
 ### Changed
-- Label: Prediction-Label im Dark-Theme – heller Hintergrund durch dunklen ersetzt (`#2a2a2a`)
-- Label: Button „Update" umbenannt in „Save & Next" (klarere Semantik)
-- Label: Grid-Button zeigt An/Aus-Zustand farblich an (blau = aktiv, grau = inaktiv)
-- Label: +/−-Buttons umsortiert – feine Schritte (±0.1) oben, grobe (±1.0) unten
-- Label: Visuelles Speicher-Feedback – „Save & Next" leuchtet kurz grün nach erfolgreichem Speichern
+- Label: Prediction label in dark theme — replaced light background with dark (`#2a2a2a`)
+- Label: Renamed button "Update" to "Save & Next" for clearer semantics
+- Label: Grid button indicates on/off state via colour (blue = active, grey = inactive)
+- Label: Reordered +/− buttons — fine steps (±0.1) on top, coarse steps (±1.0) below
+- Label: Visual save feedback — "Save & Next" briefly flashes green after successful save
 
 ### Fixed
-- Label: Bestätigungsdialog vor dem unwiderruflichen Löschen eines Bildes
-- Label: Fehlerbehandlung bei `shutil.move()` und `os.remove()` mit Fehlermeldung statt Absturz
-- Label: Polar-Overlay (Striche und Zahlen) mit Halo-Effekt – sichtbar auf hellen und dunklen Bildern (WCAG `contrast-data` ≥ 3:1)
+- Label: Confirmation dialog before permanently deleting an image
+- Label: Error handling for `shutil.move()` and `os.remove()` shows error message instead of crashing
+- Label: Polar overlay (ticks and labels) with halo effect — visible on both light and dark images (WCAG contrast ≥ 3:1)
 
 ## [2.0.3] - 2026-04-21
 

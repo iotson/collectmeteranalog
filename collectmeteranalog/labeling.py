@@ -22,17 +22,7 @@ from PySide6.QtGui import (
 
 from collectmeteranalog.predict import predict
 from collectmeteranalog.__version__ import __version__
-
-
-def ziffer_data_files(input_dir):
-    '''return a list of all images in given input dir in all subdirectories'''
-    imgfiles = []
-    for root, dirs, files in os.walk(input_dir):
-        for file in files:
-            if file.endswith(".jpg"):
-                imgfiles.append(root + "/" + file)
-    imgfiles = sorted(imgfiles, key=lambda x: os.path.basename(x))
-    return imgfiles
+from collectmeteranalog.utils import ziffer_data_files
 
 
 def load_image(files, i, startlabel=-1):
@@ -299,25 +289,23 @@ class LabelingWindow(QMainWindow):
 
         right_panel.addStretch()
 
-        # Grid-Toggle mit An/Aus-Zustand
-        self.btn_grid = QPushButton("Grid: An")
-        self.btn_grid.setToolTip("Grid ein-/ausblenden (G)")
+        self.btn_grid = QPushButton("Grid: On")
+        self.btn_grid.setToolTip("Toggle grid overlay (G)")
         self.btn_grid.clicked.connect(self._on_toggle_grid)
         self.btn_grid.setStyleSheet(_BTN_GRID_ON_STYLE)
         right_panel.addWidget(self.btn_grid)
 
         right_panel.addStretch()
 
-        # +/- Buttons: feine Schritte oben, grobe unten
         btn_layout = QGridLayout()
         btn_dec01 = QPushButton("-0.1")
         btn_inc01 = QPushButton("+0.1")
         btn_dec1 = QPushButton("-1.0")
         btn_inc1 = QPushButton("+1.0")
-        btn_dec01.setToolTip("Label -0.1 (Pfeil runter)")
-        btn_inc01.setToolTip("Label +0.1 (Pfeil hoch)")
-        btn_dec1.setToolTip("Label -1.0 (Bild runter)")
-        btn_inc1.setToolTip("Label +1.0 (Bild hoch)")
+        btn_dec01.setToolTip("Label -0.1 (Arrow down)")
+        btn_inc01.setToolTip("Label +0.1 (Arrow up)")
+        btn_dec1.setToolTip("Label -1.0 (Page down)")
+        btn_inc1.setToolTip("Label +1.0 (Page up)")
         btn_dec01.clicked.connect(lambda: self._change_label(-0.1))
         btn_inc01.clicked.connect(lambda: self._change_label(0.1))
         btn_dec1.clicked.connect(lambda: self._change_label(-1.0))
@@ -330,13 +318,12 @@ class LabelingWindow(QMainWindow):
 
         right_panel.addStretch()
 
-        # Shortcut-Legende
         shortcut_label = QLabel(
-            "← → Bild wechseln\n"
+            "← → Navigate\n"
             "↑ ↓  ±0.1\n"
             "PgUp/Dn  ±1.0\n"
-            "Enter  Speichern\n"
-            "Del  Löschen"
+            "Enter  Save\n"
+            "Del  Delete"
         )
         shortcut_label.setStyleSheet(
             "color: #aaa; font-size: 12px; padding: 4px;"
@@ -345,13 +332,12 @@ class LabelingWindow(QMainWindow):
 
         right_panel.addStretch()
 
-        # Previous / Save & Next / Delete
         btn_previous = QPushButton("◀  Previous")
-        btn_previous.setToolTip("Vorheriges Bild (Pfeil links)")
+        btn_previous.setToolTip("Previous image (Arrow left)")
         self.btn_save = QPushButton("Save & Next  ▶")
-        self.btn_save.setToolTip("Label speichern und weiter (Enter / Pfeil rechts)")
+        self.btn_save.setToolTip("Save label and advance (Enter / Arrow right)")
         btn_delete = QPushButton("Delete")
-        btn_delete.setToolTip("Bild unwiderruflich löschen (Entf)")
+        btn_delete.setToolTip("Permanently delete image (Del)")
         btn_delete.setStyleSheet(
             "QPushButton { background: #c0392b; color: white; padding: 6px; "
             "border-radius: 3px; }"
@@ -366,7 +352,7 @@ class LabelingWindow(QMainWindow):
 
         main_layout.addLayout(right_panel)
 
-        # Slider + Fortschrittsbalken (unten)
+        # Slider + progress bar (bottom)
         bottom_layout = QVBoxLayout()
 
         slider_layout = QHBoxLayout()
@@ -388,9 +374,8 @@ class LabelingWindow(QMainWindow):
         slider_layout.addWidget(self.slider, stretch=1)
         slider_layout.addWidget(self.slider_value_label)
 
-        # Fortschrittsbalken
         progress_layout = QHBoxLayout()
-        progress_label = QLabel("Fortschritt:")
+        progress_label = QLabel("Progress:")
         progress_label.setStyleSheet("font-size: 11px; color: #aaa;")
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 1)
@@ -512,23 +497,23 @@ class LabelingWindow(QMainWindow):
             self._flash_save_button()
         except OSError as e:
             QMessageBox.critical(
-                self, "Fehler beim Speichern",
-                f"Das Label konnte nicht gespeichert werden:\n{e}"
+                self, "Save Error",
+                f"Failed to save the label:\n{e}"
             )
             return
         self.i = (self.i + 1) % len(self.files)
         self._load_current()
 
     def _flash_save_button(self):
-        """Kurzes grünes Aufleuchten als Speicher-Feedback."""
+        """Briefly flash the save button green as visual save feedback."""
         self.btn_save.setStyleSheet(_BTN_SAVE_FLASH_STYLE)
-        QTimer.singleShot(300, lambda: self.btn_save.setStyleSheet(_BTN_STYLE))
+        QTimer.singleShot(300, self.btn_save, lambda: self.btn_save.setStyleSheet(_BTN_STYLE))
 
     def _on_remove(self):
         reply = QMessageBox.question(
             self,
-            "Bild löschen",
-            f"Soll dieses Bild unwiderruflich gelöscht werden?\n\n"
+            "Delete Image",
+            f"Permanently delete this image?\n\n"
             f"{os.path.basename(self.filename)}",
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No,
@@ -539,8 +524,8 @@ class LabelingWindow(QMainWindow):
             os.remove(self.filename)
         except OSError as e:
             QMessageBox.critical(
-                self, "Fehler beim Löschen",
-                f"Das Bild konnte nicht gelöscht werden:\n{e}"
+                self, "Delete Error",
+                f"Failed to delete the image:\n{e}"
             )
             return
         self.files.pop(self.i)
@@ -556,10 +541,10 @@ class LabelingWindow(QMainWindow):
         self.view.set_grid_visible(self.usegrid)
         self._update_overlay()
         if self.usegrid:
-            self.btn_grid.setText("Grid: An")
+            self.btn_grid.setText("Grid: On")
             self.btn_grid.setStyleSheet(_BTN_GRID_ON_STYLE)
         else:
-            self.btn_grid.setText("Grid: Aus")
+            self.btn_grid.setText("Grid: Off")
             self.btn_grid.setStyleSheet(_BTN_GRID_OFF_STYLE)
 
     def _load_current(self):
@@ -575,50 +560,33 @@ def label(path, startlabel=0.0, labelfile_path=None, ticksteps=1):
     labelfile_prediction = None
 
     if labelfile_path is not None:
-        try:
-            print(f"Loading image file list | labelfile: {labelfile_path}")
-            files_df = pd.read_csv(
-                labelfile_path, index_col="Index",
-                usecols=["Index", "File", "Predicted"]
-            )
+        print(f"Loading image file list | labelfile: {labelfile_path}")
+        raw_df = pd.read_csv(labelfile_path, index_col=0)
+        is_modern_format = {"File", "Predicted"}.issubset(raw_df.columns)
+
+        if is_modern_format:
+            files_df = raw_df[["File", "Predicted"]].copy()
             files_df["FilePath"] = files_df["File"].apply(
                 lambda f: os.path.join(path, f)
             )
             files_df = files_df[files_df["FilePath"].apply(os.path.exists)]
-
-            if "Predicted" in files_df.columns:
-                labelfile_prediction = files_df["Predicted"].to_numpy().reshape(-1)
-                print("labelfile: Prediction data available")
-            else:
-                labelfile_prediction = []
-                print("labelfile: No prediction data available")
-
+            labelfile_prediction = files_df["Predicted"].to_numpy().reshape(-1)
             files = files_df["FilePath"].tolist()
+            print("labelfile: Prediction data available")
+        else:
+            print("Columns 'Index, File, Predicted' not found — loading labelfile in legacy format...")
+            raw_files = [str(v) for v in raw_df.to_numpy().reshape(-1)]
+            files = [
+                os.path.join(path, f) for f in raw_files
+                if os.path.exists(os.path.join(path, f))
+            ]
+            labelfile_prediction = [None] * len(files)
+            if files:
+                print(f"Loading images from path: {os.path.join(path, os.path.dirname(raw_files[0]))}")
 
-            if len(files) > 0:
-                print(f"Loading images from path: {os.path.dirname(files[0])}")
-            else:
-                raise SystemExit("Image file list empty. No files to load")
-
-        except Exception:
-            print("Columns 'Index, File, Predicted' in labelfile not found. "
-                  "Try loading labelfile in legacy format...")
-            try:
-                raw_files = pd.read_csv(
-                    labelfile_path, index_col=0
-                ).to_numpy().reshape(-1)
-                print(f"Loading images from path: "
-                      f"{os.path.join(path, os.path.dirname(raw_files[0]))}")
-                files = [
-                    os.path.join(path, f) for f in raw_files
-                    if os.path.exists(os.path.join(path, f))
-                ]
-                labelfile_prediction = [None] * len(files)
-            except Exception as legacy_e:
-                print(f"Legacy loading failed: {legacy_e}")
-                raise SystemExit(
-                    "Failed to load labelfile in any supported format."
-                )
+        if not files:
+            raise SystemExit("Image file list empty. No files to load")
+        print(f"Loading images from path: {os.path.dirname(files[0])}")
     else:
         print(f"Loading images from path: {path}")
         files = ziffer_data_files(path)

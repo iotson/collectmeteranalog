@@ -8,4 +8,4 @@ def test_version_format():
 
 
 def test_version_is_current():
-    assert __version__ == "1.2.0"
+    assert __version__ == "2.0.3"
