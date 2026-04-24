@@ -1,0 +1,125 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  # ============================================================
+  # JOB 1: Tests + Coverage + SCA (pip-audit) + SAST (Bandit)
+  # ============================================================
+  test:
+    name: Tests, Coverage, SCA & SAST (Bandit)
+    runs-on: ubuntu-latest
+
+    env:
+      QT_QPA_PLATFORM: offscreen
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+
+      # --------------------------------------------------------
+      # Tests mit Coverage
+      # --------------------------------------------------------
+      - name: Run pytest with coverage
+        run: |
+          pytest tests/ \
+            --cov=collectmeteranalog \
+            --cov-report=xml:coverage.xml \
+            --cov-report=term-missing \
+            --cov-fail-under=80
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage.xml
+
+      # --------------------------------------------------------
+      # SCA: pip-audit (CVE-Scanning der Abhängigkeiten)
+      # --------------------------------------------------------
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: Run pip-audit (SCA)
+        run: |
+          pip-audit \
+            --requirement requirements.txt \
+            --output json \
+            --output-file pip-audit-report.json
+
+      - name: Upload pip-audit report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pip-audit-report
+          path: pip-audit-report.json
+
+      # --------------------------------------------------------
+      # SAST: Bandit (Python-spezifische Sicherheitsanalyse)
+      # --------------------------------------------------------
+      - name: Install bandit
+        run: pip install bandit[toml]
+
+      - name: Run bandit (SAST)
+        run: |
+          bandit \
+            -r collectmeteranalog/ \
+            -f json \
+            -o bandit-report.json \
+            --severity-level medium \
+            --confidence-level medium
+
+      - name: Upload bandit report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bandit-report
+          path: bandit-report.json
+
+  # ============================================================
+  # JOB 2: CodeQL (SAST - separater Job wegen security-events-Permission)
+  # ============================================================
+  codeql:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: python
+          queries: security-and-quality
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:python"

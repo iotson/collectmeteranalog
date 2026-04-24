@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- CI: Add CI pipeline with tests (pytest, coverage ≥ 80%), SCA (pip-audit), and SAST (Bandit + CodeQL)
 - Label: Progress bar shows current image index and total count (`X / N`)
 - Label: Shortcut legend visible in right panel (← →  ↑ ↓  PgUp/Dn  Enter  Del)
 - Label: Tooltips on all buttons with keyboard shortcut hints
