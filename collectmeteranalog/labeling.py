@@ -561,7 +561,10 @@ def label(path, startlabel=0.0, labelfile_path=None, ticksteps=1):
 
     if labelfile_path is not None:
         print(f"Loading image file list | labelfile: {labelfile_path}")
-        raw_df = pd.read_csv(labelfile_path, index_col=0)
+        try:
+            raw_df = pd.read_csv(labelfile_path, index_col=0)
+        except (OSError, pd.errors.ParserError) as e:
+            raise SystemExit(f"Failed to load labelfile '{labelfile_path}': {e}")
         is_modern_format = {"File", "Predicted"}.issubset(raw_df.columns)
 
         if is_modern_format:
