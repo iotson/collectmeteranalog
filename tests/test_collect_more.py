@@ -36,7 +36,6 @@ class TestReadImages:
 
     def test_url_error_causes_exit(self, tmp_path):
         """URLError (server unreachable) must call sys.exit(1)."""
-        from collectmeteranalog.collect import readimages
 
         self._all_paths_except_hour00(tmp_path)
 
@@ -44,23 +43,21 @@ class TestReadImages:
             "urllib.request.urlopen", side_effect=URLError("unreachable")
         ):
             with pytest.raises(SystemExit) as exc:
-                readimages("192.168.1.1", str(tmp_path), daysback=1)
+                collect_mod.readimages("192.168.1.1", str(tmp_path), daysback=1)
             assert exc.value.code == 1
 
     def test_http_error_continues(self, tmp_path):
         """HTTPError (e.g. 404) must be swallowed – no exit."""
-        from collectmeteranalog.collect import readimages
 
         self._all_paths_except_hour00(tmp_path)
 
         http_err = HTTPError(url="", code=404, msg="Not Found", hdrs={}, fp=None)
         with mock.patch("urllib.request.urlopen", side_effect=http_err):
             # Should not raise
-            readimages("192.168.1.1", str(tmp_path), daysback=1)
+            collect_mod.readimages("192.168.1.1", str(tmp_path), daysback=1)
 
     def test_existing_path_is_skipped(self, tmp_path):
         """Pre-existing hourly directories must be skipped (no urlopen call)."""
-        from collectmeteranalog.collect import readimages
 
         # Create ALL 24 dirs so every hour is skipped
         today = collect_mod.yesterday(0)
@@ -70,7 +67,7 @@ class TestReadImages:
             d.mkdir(parents=True, exist_ok=True)
 
         with mock.patch("urllib.request.urlopen") as mock_url:
-            readimages("192.168.1.1", str(tmp_path), daysback=1)
+            collect_mod.readimages("192.168.1.1", str(tmp_path), daysback=1)
             mock_url.assert_not_called()
 
     def test_download_jpeg_content_type(self, tmp_path):
@@ -124,7 +121,6 @@ class TestReadImages:
 
     def test_non_jpg_url_is_skipped(self, tmp_path):
         """URLs not ending in .jpg/.jpeg must be ignored."""
-        from collectmeteranalog.collect import readimages
 
         self._all_paths_except_hour00(tmp_path)
 
@@ -134,7 +130,7 @@ class TestReadImages:
 
         with mock.patch("urllib.request.urlopen", return_value=mock_fp):
             with mock.patch("requests.get") as mock_get:
-                readimages("192.168.1.1", str(tmp_path), daysback=1)
+                collect_mod.readimages("192.168.1.1", str(tmp_path), daysback=1)
                 mock_get.assert_not_called()
 
     def test_request_exception_breaks_retry(self, tmp_path):
@@ -175,7 +171,6 @@ class TestReadImages:
 
     def test_servername_with_prefix(self, tmp_path):
         """Servername already containing http:// is used as-is."""
-        from collectmeteranalog.collect import readimages
 
         today = collect_mod.yesterday(0)
         for i in range(24):
@@ -183,7 +178,7 @@ class TestReadImages:
             d.mkdir(parents=True, exist_ok=True)
 
         with mock.patch("urllib.request.urlopen") as mock_url:
-            readimages("http://meter.local", str(tmp_path), daysback=1)
+            collect_mod.readimages("http://meter.local", str(tmp_path), daysback=1)
             mock_url.assert_not_called()
 
 
