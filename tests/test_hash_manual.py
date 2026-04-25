@@ -1,8 +1,6 @@
 """Tests for hash_manual.py (standalone script with module-level execution)."""
-import importlib
 import sys
 
-import pytest
 from PIL import Image
 
 

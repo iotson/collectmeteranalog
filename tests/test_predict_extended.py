@@ -1,8 +1,6 @@
-import math
 from unittest import mock
 
 import numpy as np
-import pytest
 from PIL import Image
 
 import collectmeteranalog.predict as predict_mod
@@ -19,7 +17,7 @@ class TestLoadInterpreter:
         # Mock import failure
         with mock.patch.dict("sys.modules", {"tflite_runtime.interpreter": None}):
             with mock.patch.dict("sys.modules", {"tensorflow.lite": None}):
-                result = predict_mod.load_interpreter("some_model.tflite")
+                predict_mod.load_interpreter("some_model.tflite")
 
         img = Image.new("RGB", (64, 64))
         assert predict_mod.predict(img) == -1

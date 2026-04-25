@@ -1,5 +1,3 @@
-import os
-
 from collectmeteranalog.collect import yesterday, ziffer_data_files
 
 

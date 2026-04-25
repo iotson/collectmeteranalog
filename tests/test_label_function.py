@@ -1,5 +1,4 @@
 import os
-import sys
 from unittest import mock
 
 import numpy as np

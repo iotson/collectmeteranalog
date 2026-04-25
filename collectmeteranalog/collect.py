@@ -12,7 +12,6 @@ import shutil
 from collectmeteranalog.labeling import label
 from collectmeteranalog.utils import ziffer_data_files
 import time
-import numpy as np
 
 
 target_raw_path =  "data/raw_images"   # here all raw images will be stored

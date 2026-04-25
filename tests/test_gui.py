@@ -1,11 +1,9 @@
-import math
 import os
 
-import numpy as np
 import pytest
 from PIL import Image
 
-from collectmeteranalog.labeling import ziffer_data_files, load_image
+from collectmeteranalog.labeling import ziffer_data_files
 
 # GUI tests require a display; skip if unavailable
 pytestmark = pytest.mark.skipif(

@@ -7,11 +7,7 @@ from urllib.error import HTTPError, URLError
 import pytest
 from PIL import Image
 
-from collectmeteranalog.collect import (
-    move_to_label,
-    remove_similar_images,
-    yesterday,
-)
+import collectmeteranalog.collect as collect_mod
 
 
 # ---------------------------------------------------------------------------
@@ -32,7 +28,7 @@ class TestReadImages:
 
     def _all_paths_except_hour00(self, tmp_path, servername="192.168.1.1"):
         """Pre-create all hourly dirs except 00 so only one HTTP request fires."""
-        today = yesterday(0)
+        today = collect_mod.yesterday(0)
         for i in range(1, 24):
             hour = f"{i:02d}"
             d = tmp_path / servername / today / hour
@@ -67,7 +63,7 @@ class TestReadImages:
         from collectmeteranalog.collect import readimages
 
         # Create ALL 24 dirs so every hour is skipped
-        today = yesterday(0)
+        today = collect_mod.yesterday(0)
         for i in range(24):
             hour = f"{i:02d}"
             d = tmp_path / "192.168.1.1" / today / hour
@@ -168,7 +164,7 @@ class TestReadImages:
         from collectmeteranalog.collect import readimages
 
         # All paths exist → no actual HTTP call needed
-        today = yesterday(0)
+        today = collect_mod.yesterday(0)
         for i in range(24):
             d = tmp_path / "meter.local" / today / f"{i:02d}"
             d.mkdir(parents=True, exist_ok=True)
@@ -181,7 +177,7 @@ class TestReadImages:
         """Servername already containing http:// is used as-is."""
         from collectmeteranalog.collect import readimages
 
-        today = yesterday(0)
+        today = collect_mod.yesterday(0)
         for i in range(24):
             d = tmp_path / "http://meter.local" / today / f"{i:02d}"
             d.mkdir(parents=True, exist_ok=True)
@@ -200,7 +196,7 @@ class TestRemoveSimilarImages:
     def test_empty_input_creates_hash_file(self, tmp_path):
         """No images → empty hash file is written."""
         (tmp_path / "data").mkdir()
-        remove_similar_images(str(tmp_path), [], "meter1")
+        collect_mod.remove_similar_images(str(tmp_path), [], "meter1")
         assert (tmp_path / "data" / "HistoricHashData.txt").exists()
 
     def test_unique_images_are_kept(self, tmp_path):
@@ -217,7 +213,7 @@ class TestRemoveSimilarImages:
         Image.fromarray(arr2, mode="L").convert("RGB").save(p2)
 
         # similarbits=0 → abs(diff) < 0 is never true, nothing removed
-        remove_similar_images(str(tmp_path), [str(p1), str(p2)], "m", similarbits=0)
+        collect_mod.remove_similar_images(str(tmp_path), [str(p1), str(p2)], "m", similarbits=0)
         assert p1.exists()
         assert p2.exists()
 
@@ -230,7 +226,7 @@ class TestRemoveSimilarImages:
         img.save(p1)
         img.save(p2)
 
-        remove_similar_images(
+        collect_mod.remove_similar_images(
             str(tmp_path), [str(p1), str(p2)], "m", similarbits=10
         )
         remaining = sum(1 for p in (p1, p2) if p.exists())
@@ -245,7 +241,7 @@ class TestRemoveSimilarImages:
         img.save(p1)
         img.save(p2)
 
-        remove_similar_images(
+        collect_mod.remove_similar_images(
             str(tmp_path), [str(p1), str(p2)], "m", similarbits=10, saveduplicates=True
         )
         dup_dir = tmp_path / "data" / "raw_images" / "duplicates"
@@ -277,7 +273,7 @@ class TestRemoveSimilarImages:
         p = tmp_path / "new.jpg"
         Image.fromarray(arr2, mode="L").convert("RGB").save(p)
 
-        remove_similar_images(str(tmp_path), [str(p)], "m", similarbits=1)
+        collect_mod.remove_similar_images(str(tmp_path), [str(p)], "m", similarbits=1)
 
         # Hash file should now contain 2 entries (old + new)
         lines = hash_file.read_text(encoding="utf-8").strip().splitlines()
@@ -292,8 +288,6 @@ class TestMoveToLabelMoveMode:
 
     def test_move_removes_source_dir(self, tmp_path):
         """keepolddata=False must move files and delete raw_images dir."""
-        import collectmeteranalog.collect as collect_mod
-
         raw_dir = tmp_path / "data" / "raw_images"
         raw_dir.mkdir(parents=True)
         files = []
@@ -308,7 +302,7 @@ class TestMoveToLabelMoveMode:
         collect_mod.target_label_path = "data/labeled"
 
         try:
-            move_to_label(str(tmp_path), False, files)  # keepolddata=False
+            collect_mod.move_to_label(str(tmp_path), False, files)  # keepolddata=False
             label_dir = tmp_path / "data" / "labeled"
             assert label_dir.exists()
             assert len(list(label_dir.glob("*.jpg"))) == 3
@@ -319,8 +313,6 @@ class TestMoveToLabelMoveMode:
 
     def test_copy_keeps_source(self, tmp_path):
         """keepolddata=True must copy files and keep the source."""
-        import collectmeteranalog.collect as collect_mod
-
         raw_dir = tmp_path / "data" / "raw_images"
         raw_dir.mkdir(parents=True)
         files = []
@@ -333,7 +325,7 @@ class TestMoveToLabelMoveMode:
         collect_mod.target_label_path = "data/labeled"
 
         try:
-            move_to_label(str(tmp_path), True, files)  # keepolddata=True
+            collect_mod.move_to_label(str(tmp_path), True, files)  # keepolddata=True
             assert all(os.path.exists(f) for f in files)
         finally:
             collect_mod.target_label_path = orig_label
