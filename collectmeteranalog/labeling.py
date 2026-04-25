@@ -9,11 +9,10 @@ from PIL import Image
 
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QGraphicsView, QGraphicsScene,
-    QGraphicsPixmapItem, QGraphicsLineItem, QGraphicsTextItem,
     QPushButton, QSlider, QLabel, QVBoxLayout, QHBoxLayout,
     QGridLayout, QWidget, QSizePolicy, QMessageBox, QProgressBar
 )
-from PySide6.QtCore import Qt, QLineF, QPointF, QTimer
+from PySide6.QtCore import Qt, QPointF, QTimer
 from PySide6.QtGui import (
     QPixmap, QImage, QPen, QColor, QFont, QKeySequence, QShortcut,
     QPainter, QBrush

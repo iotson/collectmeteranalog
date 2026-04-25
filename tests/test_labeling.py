@@ -1,9 +1,5 @@
 import os
-import shutil
-import math
 
-import numpy as np
-import pytest
 from PIL import Image
 
 from collectmeteranalog.labeling import ziffer_data_files, load_image

@@ -1,6 +1,4 @@
 import os
-import shutil
-import math
 from unittest.mock import patch
 
 import numpy as np
@@ -32,7 +30,6 @@ class TestLabelingWindowNavigation:
     def test_on_previous_wraps(self, tmp_image_dir):
         _make_app()
         w = self._make_window(tmp_image_dir)
-        initial_i = w.i
         w._on_previous()
         assert w.i == len(w.files) - 1  # wraps to end
         w.close()
